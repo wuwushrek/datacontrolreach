@@ -451,8 +451,8 @@ def mul_iTv(x_lb, x_ub, y_lb, y_ub):
 
 
 # test derivatives
-value, derivative = jax.jvp(Interval.__rsub__,
-						 (Interval(3.0, 4.0), Interval(1.0, 2.0)),
+value, derivative = jax.jvp(Interval.__mul__,
+						 (Interval(-3.0, 4.0), Interval(1.0, 2.0)),
 						 (Interval(0.0, 0.0), Interval(0.0, 1.0))
 						 )
 print(value)

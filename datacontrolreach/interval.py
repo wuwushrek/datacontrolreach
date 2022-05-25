@@ -63,7 +63,15 @@ class Interval:
     def __mul__(self, other):
         """ Multiplication (elementwise) between two intervals
         """
-        return iv_mult(self, other)
+        if isinstance(other, Interval):
+            val_1, val_2, val_3, val_4 = self.lb * other.lb, self.lb * other.ub, self.ub * other.lb, self.ub * other.ub
+            n_lb = jp.minimum(val_1, jp.minimum(val_2, jp.minimum(val_3, val_4)))
+            n_ub = jp.maximum(val_1, jp.maximum(val_2, jp.maximum(val_3, val_4)))
+            return Interval(lb=n_lb, ub=n_ub)
+        else:
+            temp_1, temp_2 = self.ub * other, self.lb * other
+            return Interval(lb=jp.minimum(temp_1, temp_2), ub=jp.maximum(temp_1, temp_2))
+
 
     # Multiplication between a non interval and an interval
     __rmul__ = __mul__
@@ -502,26 +510,26 @@ def jvp_iv_rsub(primal, tangents):
     xdot, ydot = tangents
     return iv_rsub(x, y), iv_rsub(xdot, ydot)
 
-@jax.custom_jvp
-def iv_mult(x, other):
-    """ Multiplication (elementwise) between two intervals
-    """
-    if isinstance(other, Interval):
-        val_1, val_2, val_3, val_4 = x.lb * other.lb, x.lb * other.ub, x.ub * other.lb, x.ub * other.ub
-        n_lb = jp.minimum(val_1, jp.minimum(val_2, jp.minimum(val_3,val_4)))
-        n_ub = jp.maximum(val_1, jp.maximum(val_2, jp.maximum(val_3,val_4)))
-        return Interval(lb= n_lb, ub=n_ub)
-    else:
-        temp_1, temp_2 = x.ub*other, x.lb * other
-        return Interval(lb=jp.minimum(temp_1, temp_2), ub=jp.maximum(temp_1, temp_2))
+#@jax.custom_jvp
+#def iv_mult(x, other):
+#    """ Multiplication (elementwise) between two intervals
+#    """
+#    if isinstance(other, Interval):
+#        val_1, val_2, val_3, val_4 = x.lb * other.lb, x.lb * other.ub, x.ub * other.lb, x.ub * other.ub
+#        n_lb = jp.minimum(val_1, jp.minimum(val_2, jp.minimum(val_3,val_4)))
+#        n_ub = jp.maximum(val_1, jp.maximum(val_2, jp.maximum(val_3,val_4)))
+#        return Interval(lb= n_lb, ub=n_ub)
+#    else:
+#        temp_1, temp_2 = x.ub*other, x.lb * other
+#        return Interval(lb=jp.minimum(temp_1, temp_2), ub=jp.maximum(temp_1, temp_2))
 
-@iv_mult.defjvp
-def jvp_iv_mult(primal, tangents):
-    """ Addition between two intervals
-    """
-    x, y = primal
-    xdot, ydot = tangents
-    return iv_mult(x,y), y*xdot+x*ydot
+#@iv_mult.defjvp
+#def jvp_iv_mult(primal, tangents):
+#    """ Addition between two intervals
+#    """
+#    x, y = primal
+#    xdot, ydot = tangents
+#    return iv_mult(x,y), y*xdot+x*ydot
 
 @jax.custom_jvp
 def iv_div(x, other):
