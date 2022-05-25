@@ -365,7 +365,6 @@ def test_matrixmul(seed):
 	int_lb_4, int_ub_4 = rd_interval((n_dim1[0],))
 	int_lb_5, int_ub_5 = rd_interval((n_dim1[0],n_dim1[1], n_dim2[1]))
 
-
 	# Build the interval matrices
 	mA = Interval(lb=int_lb_1, ub= int_ub_1)
 	mB = Interval(lb=int_lb_2, ub= int_ub_2)
@@ -378,7 +377,6 @@ def test_matrixmul(seed):
 	res_3 = mD @ mA
 
 	res_4 = mE @ mC
-
 
 	mA_iv = np2iv(int_lb_1, int_ub_1)
 	mB_iv = np2iv(int_lb_2, int_ub_2)
@@ -395,6 +393,7 @@ def test_matrixmul(seed):
 	assert compare_intervals(res_2, res_2_iv), 'Mat interval product vector interval fails : {} , {}\n'.format(res_2, res_2_iv)
 	assert compare_intervals(res_3, res_3_iv), 'vect interval product Mat interval fails : {} , {}\n'.format(res_3, res_3_iv)
 	assert compare_intervals(res_4, res_4_iv), 'Tensor interval product Mat interval fails : {} , {}\n'.format(res_4, res_4_iv)
+
 
 def test_jit(seed):
 	np.random.seed(seed)
@@ -449,3 +448,12 @@ def mul_iTv(x_lb, x_ub, y_lb, y_ub):
 			res_lb[i,k] = res_i_lb
 			res_ub[i,k] = res_i_ub
 	return res_lb, res_ub
+
+
+# test derivatives
+value, derivative = jax.jvp(Interval.__rsub__,
+						 (Interval(3.0, 4.0), Interval(1.0, 2.0)),
+						 (Interval(0.0, 0.0), Interval(0.0, 1.0))
+						 )
+print(value)
+print(derivative)

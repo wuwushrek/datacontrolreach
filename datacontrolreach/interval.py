@@ -39,7 +39,10 @@ class Interval:
     def __add__(self, other):
         """ Addition between two intervals
         """
-        return iv_add(self, other)
+        if isinstance(other, Interval):
+            return Interval(lb=self.lb + other.lb, ub=self.ub + other.ub)
+        else:
+            return Interval(lb=self.lb + other, ub=self.ub + other)
 
     # Addition between a non interval and an interval
     __radd__ = __add__
@@ -47,7 +50,10 @@ class Interval:
     def __sub__(self, other):
         """ Substraction between two intervals
         """
-        return iv_sub(self, other)
+        if isinstance(other, Interval):
+            return Interval(lb=self.lb - other.ub, ub=self.ub - other.lb)
+        else:
+            return Interval(lb=self.lb - other, ub=self.ub - other)
 
     def __rsub__(self, other):
         """ Substraction between a noninterval and an interval
@@ -436,41 +442,51 @@ reshape = lambda a, newshape : a.reshape(newshape)
 array = lambda a, dtype=None : block_array(a, dtype)
 full = lambda shape, fill_value, dtype=None : Interval(lb=jp.full(shape, fill_value.lb), ub=jp.full(shape, fill_value.ub))
 
+
+#@Interval.__add__.defjvp
+#def jvp___add__(primal, tangents):
+#    """ Addition between two intervals
+#    """
+#    x, y = primal
+#    xdot, ydot = tangents
+#    return iv_add(x, y), iv_add(xdot, ydot)
+
+
 # Define the JVP rules for the interval arithmetic
-@partial(jax.custom_jvp)
-def iv_add(x, y):
-    """ Addition between two intervals
-    """
-    if isinstance(y, Interval):
-        return Interval(lb=x.lb+y.lb, ub=x.ub+y.ub)
-    else:
-        return Interval(lb=x.lb+y, ub=x.ub+y)
+#@partial(jax.custom_jvp)
+#def iv_add(x, y):
+#    """ Addition between two intervals
+#    """
+#    if isinstance(y, Interval):
+#        return Interval(lb=x.lb+y.lb, ub=x.ub+y.ub)
+#    else:
+#        return Interval(lb=x.lb+y, ub=x.ub+y)
 
-@iv_add.defjvp
-def jvp_iv_add(primal, tangents):
-    """ Addition between two intervals
-    """
-    x, y = primal
-    xdot, ydot = tangents
-    return iv_add(x, y), iv_add(xdot, ydot)
+#@iv_add.defjvp
+#def jvp_iv_add(primal, tangents):
+#    """ Addition between two intervals
+#    """
+#    x, y = primal
+#    xdot, ydot = tangents
+#    return iv_add(x, y), iv_add(xdot, ydot)
 
 
-@jax.custom_jvp
-def iv_sub(x, y):
-    """ Addition between two intervals
-    """
-    if isinstance(y, Interval):
-        return Interval(lb=x.lb-y.ub, ub=x.ub-y.lb)
-    else:
-        return Interval(lb=x.lb-y, ub=x.ub-y)
+#@jax.custom_jvp
+#def iv_sub(x, y):
+#    """ Addition between two intervals
+#    """
+#    if isinstance(y, Interval):
+#        return Interval(lb=x.lb-y.ub, ub=x.ub-y.lb)
+#    else:
+#        return Interval(lb=x.lb-y, ub=x.ub-y)
 
-@iv_sub.defjvp
-def jvp_iv_sub(primal, tangents):
-    """ Addition between two intervals
-    """
-    x, y = primal
-    xdot, ydot = tangents
-    return iv_sub(x, y), iv_sub(xdot, ydot)
+#@iv_sub.defjvp
+#def jvp_iv_sub(primal, tangents):
+#    """ Addition between two intervals
+#    """
+#    x, y = primal
+#    xdot, ydot = tangents
+#    return iv_sub(x, y), iv_sub(xdot, ydot)
 
 @jax.custom_jvp
 def iv_rsub(x, y):
