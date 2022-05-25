@@ -71,6 +71,7 @@ t_end = (n_data_max-1) * sampling_time
 
 # Build a function to output the corresponding control value at a given time t \in [0, 4]
 # t \in [0, 1.5] corresponds to the trajectory T_15
+@jax.jit
 def uOver(t, pert=iv(jp.array([0.,0.]))):
     # print(t)
     t  = t if isinstance(t, iv) else iv(t)
@@ -80,6 +81,7 @@ def uOver(t, pert=iv(jp.array([0.,0.]))):
     uval = jp.where(t.lb < t_end+(1.0*sampling_time)-1e-6, iv(rcontrol[valid_indx]), uval+pert)
     return uval
 
+@jax.jit
 def uOverDer(t, pert=iv(jp.array([0.,0.]))):
     t  = t if isinstance(t, iv) else iv(t)
     uval = jp.array([iv(0.), -c_rot * (c_rot * (t-t_end)).sin() * c_wmax])
@@ -88,7 +90,7 @@ def uOverDer(t, pert=iv(jp.array([0.,0.]))):
 
 
 # Scalar based control signal for ode solving
-_uOver =  lambda t : uOver(t).lb
+_uOver =  lambda t : np.array(uOver(t).lb)
 
 ############################## System dynamics ###############################3
 # The actual dynamics of the system --> Decomposed in known and unknown terms

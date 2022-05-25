@@ -371,8 +371,8 @@ def sqrt(x: ndarray) -> ndarray:
 
 def where(condition: ndarray, x: ndarray, y: ndarray) -> ndarray:
   """Return elements chosen from `x` or `y` depending on `condition`."""
-  assert (isinstance(x, itvl.Interval) and isinstance(y, itvl.Interval)) or not (isinstance(y, itvl.Interval) and isinstance(x, itvl.Interval)) 
-  return _which_np(x, y, condition).where(condition, x, y)
+  assert (isinstance(x, itvl.Interval) and isinstance(y, itvl.Interval)) or (not isinstance(y, itvl.Interval) and not isinstance(x, itvl.Interval)) 
+  return _which_np(x, y).where(condition, x, y)
 
 
 def diag(v: ndarray, k: int = 0) -> ndarray:
