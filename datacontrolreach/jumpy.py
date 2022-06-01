@@ -2,7 +2,6 @@
 
 # pylint:disable=redefined-builtin
 """Numpy backend for JAX that is called for non-jit/non-jax arrays or intervals / abstract sets."""
-
 from typing import Any, Callable, List, Optional, Sequence, Tuple, TypeVar, Union
 
 import jax

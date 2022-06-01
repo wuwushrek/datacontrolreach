@@ -1,5 +1,7 @@
 import jax
-
+import math
+import numpy as np
+import datacontrolreach.jumpy as jp
 from typing import Any, Callable, List, Optional, Sequence, Tuple, TypeVar, Union
 from functools import partial
 
@@ -81,6 +83,7 @@ class Interval:
         """ Computes the power between an interval and a scalar positive integer 
         """
         # Only allow a power as an integer or float -> Interval power not allowed
+
         return iv_pow(self, other)
 
     def __rpow__(self, other):
@@ -215,7 +218,7 @@ class Interval:
         """ Log of an interval
         """
         # The function log is monotonic
-        return Interval(lb=jp.log(self._lb), ub=jp.log(self._ub))
+        return Interval(lb=jax.numpy.log(self._lb), ub=jax.numpy.log(self._ub))
 
 
     def exp(self):
@@ -256,7 +259,6 @@ class Interval:
     def __ne__(self, other):
         return jp.logical_not( self == other)
 
-
     # Bitwise operations -> Intersection and Union of intervals
     def __and__(self, other):
         if isinstance(other, Interval):
@@ -293,7 +295,6 @@ class Interval:
             return 'Interval[{}]'.format(','.join('({:.6f},{:.6f})'.format(lb, ub) for lb, ub in zip(self._lb.ravel(), self._ub.ravel()) ))
 
     def tree_flatten(self):
-        # print(self)
         return ((self._lb, self._ub), None)
 
     @classmethod
@@ -441,10 +442,12 @@ full = lambda shape, fill_value, dtype=None : Interval(lb=jp.full(shape, fill_va
 def iv_add(x, y):
     """ Addition between two intervals
     """
-    if isinstance(y, Interval):
+    if isinstance(x, Interval) and isinstance(y, Interval):
         return Interval(lb=x.lb+y.lb, ub=x.ub+y.ub)
-    else:
+    elif isinstance(x, Interval):
         return Interval(lb=x.lb+y, ub=x.ub+y)
+    else:  # y is instance of interval
+        return Interval(lb=y.lb+x, ub=y.ub+x)
 
 @iv_add.defjvp
 def jvp_iv_add(primal, tangents):
@@ -459,10 +462,12 @@ def jvp_iv_add(primal, tangents):
 def iv_sub(x, y):
     """ Addition between two intervals
     """
-    if isinstance(y, Interval):
+    if isinstance(x, Interval) and isinstance(y, Interval):
         return Interval(lb=x.lb-y.ub, ub=x.ub-y.lb)
-    else:
-        return Interval(lb=x.lb-y, ub=x.ub-y)
+    elif isinstance(x, Interval):
+        return Interval(lb=x.lb - y, ub=x.ub - y)
+    else:  # y is instance of interval
+        return Interval(lb=x-y.ub, ub=x-y.lb)
 
 @iv_sub.defjvp
 def jvp_iv_sub(primal, tangents):
@@ -490,13 +495,16 @@ def jvp_iv_rsub(primal, tangents):
 def iv_mult(x, other):
     """ Multiplication (elementwise) between two intervals
     """
-    if isinstance(other, Interval):
+    if isinstance(x, Interval) and isinstance(other, Interval):
         val_1, val_2, val_3, val_4 = x.lb * other.lb, x.lb * other.ub, x.ub * other.lb, x.ub * other.ub
         n_lb = jp.minimum(val_1, jp.minimum(val_2, jp.minimum(val_3,val_4)))
         n_ub = jp.maximum(val_1, jp.maximum(val_2, jp.maximum(val_3,val_4)))
         return Interval(lb= n_lb, ub=n_ub)
-    else:
-        temp_1, temp_2 = x.ub*other, x.lb * other
+    elif isinstance(x, Interval):
+        temp_1, temp_2 = x.ub * other, x.lb * other
+        return Interval(lb=jp.minimum(temp_1, temp_2), ub=jp.maximum(temp_1, temp_2))
+    else:  # other is interval, x is not
+        temp_1, temp_2 = other.ub*x, other.lb * x
         return Interval(lb=jp.minimum(temp_1, temp_2), ub=jp.maximum(temp_1, temp_2))
 
 @iv_mult.defjvp
@@ -513,9 +521,16 @@ def iv_div(x, other):
         containing the value 0 
     """
     if isinstance(other, Interval):
-        coeff_val = jp.where(jp.logical_or(other.lb > 0,  other.ub < 0), 1., 0.)
-        return x * Interval(lb=1.0/(other.ub*coeff_val), ub=1.0/(other.lb*coeff_val))
+        if jp.logical_and(other.lb <= 0,  other.ub >= 0).any():
+            raise ZeroDivisionError("Possible divide by 0 error. Range {} contains 0.".format(other))
+        # no longer need the coeff because -inf, inf is undesirable anyway
+        #coeff_val = jp.where(jp.logical_or(other.lb > 0,  other.ub < 0), 1., 0.)
+        #ret = x * Interval(lb=1.0/(other.ub*coeff_val), ub=1.0/(other.lb*coeff_val))
+
+        return x * Interval(lb=1.0/other.ub, ub=1.0/other.lb)
     else:
+        #if other == 0.0:
+        #    raise ZeroDivisionError()
         return x*(1.0 / other)
 
 @iv_div.defjvp
@@ -565,27 +580,31 @@ def iv_pow(x, other):
         raise NotImplementedError
 
 @iv_pow.defjvp
-def jvp_iv_pow(pow_val, primal, tangents):
+def jvp_iv_pow(primal, tangents):
     """ Division between a non interval and an interval quantity
     """
-    x,  = primal
-    xdot, = tangents
-    return iv_pow(x,pow_val), jp.zeros_like(x) if pow_val == 0 else (xdot if pow_val == 1 else pow_val*iv_pow(x, pow_val-1)*xdot)
+    x, pow = primal
+    xdot, powdot = tangents
+    dx = jp.zeros_like(x) if pow == 0 else (xdot if pow == 1 else pow*iv_pow(x, pow-1)*xdot)
+    # dy = powdot * x**pow * x.log()
+    return iv_pow(x,pow), dx# + dy
 
 @partial(jax.custom_jvp, nondiff_argnums=(0,))
 def iv_rpow(x, other):
-    """ Properly defined only for adequate power value
+    """ Properly defined only for adequate power value. Calculates other ^ x
     """
-    # In case the right hand side is a number and the power is an interval (not allowed)
-    ub_power, lb_power = other**self._ub, other**self._lb
-    return Interval(lb=jp.minimum(lb_power, ub_power), ub=jp.maximum(lb_power, ub_power))
+    if isinstance(x, Interval):
+        raise NotImplementedError    # In case the right hand side is a number and the power is an interval (not allowed)
+    return iv_pow(other, x)
+    #ub_power, lb_power = other**x, other**x
+    #return Interval(lb=jp.minimum(lb_power, ub_power), ub=jp.maximum(lb_power, ub_power))
 
 @iv_rpow.defjvp
-def jvp_iv_rpow(pow_val, primal, tangents):
+def jvp_iv_rpow(primal, tangents):
     """ Division between a non interval and an interval quantity
     """
-    x,  = primal
-    xdot, = tangents
+    x, pow = primal
+    xdot, powdot = tangents
     res = iv_rpow(pow_val,x)
     return res, jp.log(pow_val) * res
 
@@ -645,6 +664,4 @@ def jvp_iv_abs(primal, tangents):
     """
     x,  = primal
     xdot, = tangents
-    return iv_abs(x), jp.where(x > 0, xdot, jp.where(x < 0, -xdot, xdot * Interval(-1.,1.)))
-
-import datacontrolreach.jumpy as jp
+    return iv_abs(x), jp.where(x > 0, xdot, jp.where(x < 0, -xdot, xdot * Interval(-1., 1.)))

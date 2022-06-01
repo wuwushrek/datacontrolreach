@@ -2,14 +2,13 @@ from jax.config import config
 config.update("jax_enable_x64", True)
 
 import jax
-
+import datacontrolreach.jumpy as jp
 from datacontrolreach.interval import Interval
 import mpmath
 from mpmath import iv
 from mpmath import matrix
 
 import numpy as np
-
 # parser = argparse.ArgumentParser('Learning Midpoint of Stiff Linear System')
 # parser.add_argument('--seed',  type=int, default=201)
 # args = parser.parse_args()
@@ -160,14 +159,14 @@ def test_div(seed):
 	int_lb_1, int_ub_1 = rd_interval(n_dim)
 	int_lb_2, int_ub_2 = rd_nzero_interval(n_dim)
 	# Build the interval matrices
-	mA = Interval(lb=int_lb_1, ub= int_ub_1)
-	mB = Interval(lb=int_lb_2, ub= int_ub_2)
+	mA = Interval(lb=int_lb_1, ub= int_ub_1) + 10.1
+	mB = Interval(lb=int_lb_2, ub= int_ub_2) + 10.1
 	m_res = mA / mB
 	m_res_1 = 0.4 / mB
 	m_res_2 = mA / -3.0
 	# Build the interval matrices
-	mA_iv = np2iv(int_lb_1, int_ub_1)
-	mB_iv = np2iv(int_lb_2, int_ub_2)
+	mA_iv = np2iv(int_lb_1, int_ub_1) + 10.1
+	mB_iv = np2iv(int_lb_2, int_ub_2) + 10.1
 	m_res_iv = elemwise_div(mA_iv, mB_iv)
 	m_res_1_iv = elemwise_div(np2iv(np.full(n_dim,0.4), np.full(n_dim,0.4)), mB_iv)
 	m_res_2_iv = mA_iv / -3.0
@@ -410,7 +409,7 @@ def test_jit(seed):
 	f1 = lambda x, y : x * y
 	f1jit = jax.jit(f1)
 
-	# Jit of a function 
+	# Jit of a function
 	res = f1(mA[0], mB)
 	resjit = f1jit(mA[0], mB)
 
@@ -449,3 +448,203 @@ def mul_iTv(x_lb, x_ub, y_lb, y_ub):
 			res_lb[i,k] = res_i_lb
 			res_ub[i,k] = res_i_ub
 	return res_lb, res_ub
+
+
+# Jacobian tests
+def test_jacobian_add(seed):
+	np.random.seed(seed)
+	# Generate the data for test
+	size_arr = np.random.randint(low=1, high=3)
+	n_dim = tuple(np.random.randint(low=1, high=21, size=size_arr))
+	int_lb_1, int_ub_1 = rd_interval(n_dim)
+	int_lb_2, int_ub_2 = rd_interval(n_dim)
+	# Build the intervals
+	interval1 = Interval(lb=int_lb_1, ub= int_ub_1)
+	interval2 = Interval(lb=int_lb_2, ub= int_ub_2)
+
+	tangent0 = Interval( np.full(np.shape(interval1), 0.0), np.full(np.shape(interval1), 0.0))  # is an all 0's matrix
+	tangent1 = Interval( np.full(np.shape(interval1), 1.0), np.full(np.shape(interval1), 1.0))  # is an all 1's matrix
+
+	# test interval + interval
+	value, derivative = jax.jvp(Interval.__add__, (interval1, interval2), (tangent0, tangent1))
+	assert compare_intervals(tangent1, derivative), 'Jacobian for Addition between intervals fails : {} , {}\n'.format(interval1, derivative)
+
+	value, derivative = jax.jvp(Interval.__add__, (interval1, interval2), (tangent1, tangent0))
+	assert compare_intervals(tangent1, derivative), 'Jacobian for Addition between intervals fails : {} , {}\n'.format(interval1, derivative)
+
+	# test interval + number
+	value, derivative = jax.jvp(Interval.__add__, (interval1, 2.0), (tangent0, 1.0))
+	assert compare_intervals(tangent1, derivative), 'Jacobian for Addition between interval and scalar fails : {} , {}\n'.format(tangent1, derivative)
+
+	value, derivative = jax.jvp(Interval.__add__, (interval1, 2.0), (tangent1, 0.0))
+	assert compare_intervals(tangent1, derivative), 'Jacobian for Addition between interval and scalar fails : {} , {}\n'.format(tangent1, derivative)
+
+	# test number + interval
+	value, derivative = jax.jvp(Interval.__add__, (1.0, interval2), (0.0, tangent1))
+	assert compare_intervals(tangent1, derivative), 'Jacobian for Addition between scalar and interval fails : {} , {}\n'.format(tangent1, derivative)
+
+	value, derivative = jax.jvp(Interval.__add__, (1.0, interval2), (1.0, tangent0))
+	assert compare_intervals(tangent1, derivative), 'Jacobian for Addition between scalar and interval fails : {} , {}\n'.format(tangent1, derivative)
+
+def test_jacobian_sub(seed):
+	np.random.seed(seed)
+	# Generate the data for test
+	size_arr = np.random.randint(low=1, high=3)
+	n_dim = tuple(np.random.randint(low=1, high=21, size=size_arr))
+	int_lb_1, int_ub_1 = rd_interval(n_dim)
+	int_lb_2, int_ub_2 = rd_interval(n_dim)
+	# Build the intervals
+	interval1 = Interval(lb=int_lb_1, ub= int_ub_1)
+	interval2 = Interval(lb=int_lb_2, ub= int_ub_2)
+
+	tangent0 = Interval( np.full(np.shape(interval1), 0.0), np.full(np.shape(interval1), 0.0))  # is an all 0's matrix
+	tangent1 = Interval( np.full(np.shape(interval1), 1.0), np.full(np.shape(interval1), 1.0))  # is an all 1's matrix
+
+	# test interval + interval
+	value, derivative = jax.jvp(Interval.__sub__, (interval1, interval2), (tangent0, tangent1))
+	assert compare_intervals(-tangent1, derivative), 'Jacobian for Subtraction between intervals fails : {} , {}\n'.format(interval1, derivative)
+
+	value, derivative = jax.jvp(Interval.__sub__, (interval1, interval2), (tangent1, tangent0))
+	assert compare_intervals(tangent1, derivative), 'Jacobian for Subtraction between intervals fails : {} , {}\n'.format(interval1, derivative)
+
+	# test interval + number
+	value, derivative = jax.jvp(Interval.__sub__, (interval1, 2.0), (tangent0, 1.0))
+	assert compare_intervals(-tangent1, derivative), 'Jacobian for Subtraction between interval and scalar fails : {} , {}\n'.format(tangent1, derivative)
+
+	value, derivative = jax.jvp(Interval.__sub__, (interval1, 2.0), (tangent1, 0.0))
+	assert compare_intervals(tangent1, derivative), 'Jacobian for Subtraction between interval and scalar fails : {} , {}\n'.format(tangent1, derivative)
+
+	# test number + interval
+	value, derivative = jax.jvp(Interval.__sub__, (1.0, interval2), (0.0, tangent1))
+	assert compare_intervals(-tangent1, derivative), 'Jacobian for Subtraction between scalar and interval fails : {} , {}\n'.format(tangent1, derivative)
+
+	value, derivative = jax.jvp(Interval.__sub__, (1.0, interval2), (1.0, tangent0))
+	assert compare_intervals(tangent1, derivative), 'Jacobian for Subtraction between scalar and interval fails : {} , {}\n'.format(tangent1, derivative)
+
+
+def test_jacobian_mul(seed):
+	np.random.seed(seed)
+	# Generate the data for test
+	size_arr = np.random.randint(low=1, high=3)
+	n_dim = tuple(np.random.randint(low=1, high=21, size=size_arr))
+	int_lb_1, int_ub_1 = rd_interval(n_dim)
+	int_lb_2, int_ub_2 = rd_interval(n_dim)
+	# Build the intervals
+	interval1 = Interval(lb=int_lb_1, ub= int_ub_1)
+	interval2 = Interval(lb=int_lb_2, ub= int_ub_2)
+
+	tangent0 = Interval( np.full(np.shape(interval1), 0.0), np.full(np.shape(interval1), 0.0))  # is an all 0's matrix
+	tangent1 = Interval( np.full(np.shape(interval1), 1.0), np.full(np.shape(interval1), 1.0))  # is an all 1's matrix
+
+	# test interval + interval
+	value, derivative = jax.jvp(Interval.__mul__, (interval1, interval2), (tangent0, tangent1))
+	assert compare_intervals(interval1, derivative), 'Jacobian for Multiplication between intervals fails : {} , {}\n'.format(interval1, derivative)
+
+	value, derivative = jax.jvp(Interval.__mul__, (interval1, interval2), (tangent1, tangent0))
+	assert compare_intervals(interval2, derivative), 'Jacobian for Multiplication between intervals fails : {} , {}\n'.format(interval2, derivative)
+
+	# test interval + number
+	value, derivative = jax.jvp(Interval.__mul__, (interval1, 2.0), (tangent0, 1.0))
+	assert compare_intervals(interval1, derivative), 'Jacobian for Multiplication between interval and scalar fails : {} , {}\n'.format(interval1, derivative)
+
+	value, derivative = jax.jvp(Interval.__mul__, (interval1, 2.0), (tangent1, 0.0))
+	assert compare_intervals(2*tangent1, derivative), 'Jacobian for Multiplication between interval and scalar fails : {} , {}\n'.format(interval2, derivative)
+
+	# test number + interval
+	value, derivative = jax.jvp(Interval.__mul__, (1.0, interval2), (0.0, tangent1))
+	assert compare_intervals(tangent1, derivative), 'Jacobian for Multiplication between scalar and interval fails : {} , {}\n'.format(tangent1, derivative)
+
+	value, derivative = jax.jvp(Interval.__mul__, (1.0, interval2), (1.0, tangent0))
+	assert compare_intervals(interval2, derivative), 'Jacobian for Multiplication between scalar and interval fails : {} , {}\n'.format(interval2, derivative)
+
+
+def test_jacobian_div(seed):
+	np.random.seed(seed)
+	# Generate the data for test
+	size_arr = np.random.randint(low=1, high=3)
+	n_dim = tuple(np.random.randint(low=1, high=21, size=size_arr))
+	int_lb_1, int_ub_1 = rd_interval(n_dim)
+	int_lb_2, int_ub_2 = rd_interval(n_dim)
+	# Build the intervals
+	interval1 = Interval(lb=int_lb_1, ub= int_ub_1) + 10.1
+	interval2 = Interval(lb=int_lb_2, ub= int_ub_2) + 10.1
+
+	tangent0 = Interval( np.full(np.shape(interval1), 0.0), np.full(np.shape(interval1), 0.0))  # is an all 0's matrix
+	tangent1 = Interval( np.full(np.shape(interval1), 1.0), np.full(np.shape(interval1), 1.0))  # is an all 1's matrix
+
+	# test interval + interval
+	value, derivative = jax.jvp(Interval.__div__, (interval1, interval2), (tangent0, tangent1))
+	assert compare_intervals(-interval1 /(interval2 * interval2), derivative), 'Jacobian for division between intervals fails : {} , {}\n'.format(-interval1 /(interval2 * interval2), derivative)
+
+	value, derivative = jax.jvp(Interval.__div__, (interval1, interval2), (tangent1, tangent0))
+	assert compare_intervals(1/interval2, derivative), 'Jacobian for division between intervals fails : {} , {}\n'.format(interval2, derivative)
+
+	# test interval + number
+	value, derivative = jax.jvp(Interval.__div__, (interval1, 2.0), (tangent0, 1.0))
+	assert compare_intervals(-interval1 /(4.0  * tangent1), derivative), 'Jacobian for division between interval and scalar fails : {} , {}\n'.format(-interval1 / (4.0 * tangent1), derivative)
+
+	value, derivative = jax.jvp(Interval.__div__, (interval1, 2.0), (tangent1, 0.0))
+	assert compare_intervals(1/(2*tangent1), derivative), 'Jacobian for division between interval and scalar fails : {} , {}\n'.format(interval2, derivative)
+
+	# test number + interval
+	value, derivative = jax.jvp(Interval.__div__, (1.0, interval2), (0.0, tangent1))
+	assert compare_intervals(-tangent1 /(interval2 * interval2), derivative), 'Jacobian for division between scalar and interval fails : {} , {}\n'.format(tangent1, derivative)
+
+	value, derivative = jax.jvp(Interval.__div__, (1.0, interval2), (1.0, tangent0))
+	assert compare_intervals(1/interval2, derivative), 'Jacobian for division between scalar and interval fails : {} , {}\n'.format(interval2, derivative)
+
+
+def test_jacobian_pow(seed):
+	np.random.seed(seed)
+	# Generate the data for test
+	size_arr = np.random.randint(low=1, high=3)
+	n_dim = tuple(np.random.randint(low=1, high=21, size=size_arr))
+	int_lb_1, int_ub_1 = rd_interval(n_dim)
+	int_lb_2, int_ub_2 = rd_interval(n_dim)
+	# Build the intervals
+	interval1 = Interval(lb=int_lb_1, ub= int_ub_1) + 10.1
+
+	tangent0 = Interval( np.full(np.shape(interval1), 0.0), np.full(np.shape(interval1), 0.0))  # is an all 0's matrix
+	tangent1 = Interval( np.full(np.shape(interval1), 1.0), np.full(np.shape(interval1), 1.0))  # is an all 1's matrix
+
+	# test interval + number
+	value, derivative = jax.jvp(Interval.__pow__, (interval1, 2.0), (tangent0, 1.0))
+	assert compare_intervals( interval1**2.0 * Interval.log(interval1), derivative), 'Jacobian for power of interval to scalar fails : {} , {}\n'.format( interval1**2.0 * Interval.log(interval1), derivative)
+
+	value, derivative = jax.jvp(Interval.__pow__, (interval1, 2.0), (tangent1, 0.0))
+	assert compare_intervals(2.0 * interval1 ** (2.0-1), derivative), 'Jacobian for power of interval to scalar fails : {} , {}\n'.format(2.0 * interval1 ** (2.0-1), derivative)
+
+	value, derivative = jax.jvp(Interval.__pow__, (interval1, 1.5), (tangent0, 1.0))
+	assert compare_intervals( interval1**1.5 * Interval.log(interval1), derivative), 'Jacobian for power of interval to scalar fails : {} , {}\n'.format( interval1**1.5 * Interval.log(interval1), derivative)
+
+	value, derivative = jax.jvp(Interval.__pow__, (interval1, 1.5), (tangent1, 0.0))
+	assert compare_intervals(1.5 * interval1 ** (1.5-1), derivative), 'Jacobian for power of interval to scalar fails : {} , {}\n'.format(1.5 * interval1 ** (1.5-1), derivative)
+
+
+def test_jacobian_cos(seed):
+	np.random.seed(seed)
+	# Generate the data for test
+	size_arr = np.random.randint(low=1, high=3)
+	n_dim = tuple(np.random.randint(low=1, high=21, size=size_arr))
+	int_lb_1, int_ub_1 = rd_interval(n_dim)
+	# Build the intervals
+	interval1 = Interval(lb=int_lb_1, ub= int_ub_1)
+
+	tangent1 = Interval( np.full(np.shape(interval1), 1.0), np.full(np.shape(interval1), 1.0))  # is an all 1's matrix
+
+	# test sin
+	value, derivative = jax.jvp(Interval.cos, (interval1,), (tangent1,))
+	assert compare_intervals( -Interval.sin(interval1), derivative), 'Jacobian for cos of interval fails: {} , {}\n'.format( -Interval.sin(interval1), derivative)
+
+	# test cos
+	value, derivative = jax.jvp(Interval.sin, (interval1,), (tangent1,))
+	assert compare_intervals( Interval.cos(interval1), derivative), 'Jacobian for cos of interval fails: {} , {}\n'.format( Interval.cos(interval1), derivative)
+
+	# test tan = causes divide by 0 error
+	# value, derivative = jax.jvp(Interval.tan, (interval1,), (tangent1,))
+	# assert compare_intervals( 1.0/Interval.cos(interval1) ** 2, derivative), 'Jacobian for cos of interval fails: {} , {}\n'.format( 1.0/Interval.cos(interval1) ** 2, derivative)
+
+	# test abs
+	value, derivative = jax.jvp(Interval.__abs__, (interval1,), (tangent1,))
+	solution = jp.where(interval1 > 0, tangent1, jp.where(interval1 < 0, -tangent1, tangent1 * Interval(-1., 1.)))
+	assert compare_intervals(solution, derivative), 'Jacobian for cos of interval fails: {} , {}\n'.format(solution, derivative)
