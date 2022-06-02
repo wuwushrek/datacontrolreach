@@ -34,8 +34,8 @@ class Interval:
             self._lb = jp.where(no_lb_less_ub, -jp.inf, self._lb)
             self._ub = jp.where(no_lb_less_ub, jp.inf, self._ub)
 
-    __numpy_ufunc__ = None
-    __array_ufunc__ = None
+    #__numpy_ufunc__ = None
+    #__array_ufunc__ = None
 
     # Arithmetic
     def __add__(self, other):
@@ -556,7 +556,8 @@ def jvp_iv_rdiv(primal, tangents):
     xdot, ydot = tangents
     return iv_rdiv(x,y), iv_div(ydot, x)-iv_div(xdot*y, x**2)
 
-@partial(jax.custom_jvp, nondiff_argnums=(1,))
+
+@partial(jax.custom_jvp)#, nondiff_argnums=(1, ))
 def iv_pow(x, other):
     """ Computes the power between an interval and a scalar positive integer 
     """
@@ -586,8 +587,8 @@ def jvp_iv_pow(primal, tangents):
     x, pow = primal
     xdot, powdot = tangents
     dx = jp.zeros_like(x) if pow == 0 else (xdot if pow == 1 else pow*iv_pow(x, pow-1)*xdot)
-    # dy = powdot * x**pow * x.log()
-    return iv_pow(x,pow), dx# + dy
+    dy = powdot * x**pow * x.log()
+    return iv_pow(x, pow), dx + dy
 
 @partial(jax.custom_jvp, nondiff_argnums=(0,))
 def iv_rpow(x, other):
@@ -605,8 +606,8 @@ def jvp_iv_rpow(primal, tangents):
     """
     x, pow = primal
     xdot, powdot = tangents
-    res = iv_rpow(pow_val,x)
-    return res, jp.log(pow_val) * res
+    res = iv_rpow(pow, x)
+    return res, jp.log(pow) * res
 
 @jax.custom_jvp
 def iv_cos(x):

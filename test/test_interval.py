@@ -609,16 +609,16 @@ def test_jacobian_pow(seed):
 
 	# test interval + number
 	value, derivative = jax.jvp(Interval.__pow__, (interval1, 2.0), (tangent0, 1.0))
-	assert compare_intervals( interval1**2.0 * Interval.log(interval1), derivative), 'Jacobian for power of interval to scalar fails : {} , {}\n'.format( interval1**2.0 * Interval.log(interval1), derivative)
+	assert compare_intervals( interval1**2.0 * Interval.log(interval1), derivative), '1. Jacobian for power of interval to scalar fails : {} , {}\n'.format( interval1**2.0 * Interval.log(interval1), derivative)
 
 	value, derivative = jax.jvp(Interval.__pow__, (interval1, 2.0), (tangent1, 0.0))
-	assert compare_intervals(2.0 * interval1 ** (2.0-1), derivative), 'Jacobian for power of interval to scalar fails : {} , {}\n'.format(2.0 * interval1 ** (2.0-1), derivative)
+	assert compare_intervals(2.0 * interval1 ** (2.0-1), derivative), '2. Jacobian for power of interval to scalar fails : {} , {}\n'.format(2.0 * interval1 ** (2.0-1), derivative)
 
 	value, derivative = jax.jvp(Interval.__pow__, (interval1, 1.5), (tangent0, 1.0))
-	assert compare_intervals( interval1**1.5 * Interval.log(interval1), derivative), 'Jacobian for power of interval to scalar fails : {} , {}\n'.format( interval1**1.5 * Interval.log(interval1), derivative)
+	assert compare_intervals( interval1**1.5 * Interval.log(interval1), derivative), '3. Jacobian for power of interval to scalar fails : {} , {}\n'.format( interval1**1.5 * Interval.log(interval1), derivative)
 
 	value, derivative = jax.jvp(Interval.__pow__, (interval1, 1.5), (tangent1, 0.0))
-	assert compare_intervals(1.5 * interval1 ** (1.5-1), derivative), 'Jacobian for power of interval to scalar fails : {} , {}\n'.format(1.5 * interval1 ** (1.5-1), derivative)
+	assert compare_intervals(1.5 * interval1 ** (1.5-1), derivative), '4. Jacobian for power of interval to scalar fails : {} , {}\n'.format(1.5 * interval1 ** (1.5-1), derivative)
 
 
 def test_jacobian_cos(seed):
