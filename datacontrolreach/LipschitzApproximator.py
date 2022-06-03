@@ -10,7 +10,7 @@ import jax
 class LipschitzApproximator:
     """ A class to approximate a function given Lipschitz constants for each dimension and data in the form x, Interval of F(x)
     """
-    def __init__(self, shapeOfInputs, shapeOfOutputs, lipschitzConstants, boundsOnFunctionValues:Interval = None, importanceWeights = None, norm_order = 2):
+    def __init__(self, shapeOfInputs, shapeOfOutputs, lipschitzConstants, boundsOnFunctionValues:Interval = None, importanceWeights = None):
         assert shapeOfOutputs == np.shape(lipschitzConstants)
         assert boundsOnFunctionValues is None or shapeOfOutputs == np.shape(boundsOnFunctionValues)
         assert importanceWeights is None or (shapeOfOutputs + shapeOfInputs) == np.shape(importanceWeights)
@@ -20,7 +20,6 @@ class LipschitzApproximator:
         self.lipschitzConstants = lipschitzConstants
         self.boundsOnFunctionValues = boundsOnFunctionValues if boundsOnFunctionValues is not None else Interval(jp.full(shapeOfOutputs, float('-inf')), jp.full(shapeOfOutputs, float('inf')))
         self.importanceWeights = importanceWeights if importanceWeights is not None else np.ones(shapeOfOutputs + shapeOfInputs)
-        self.norm_order = norm_order
         self.datapoints = []
 
     def approximate(self, x_to_predict):
@@ -30,17 +29,17 @@ class LipschitzApproximator:
 
         # for each data point, find bound based on lipschitz constants. Then find intersection
         for x, f_x in self.datapoints:
-            difference_x = jp.abs(jp.subtract(x, x_to_predict))
+            difference_x = jp.subtract(x, x_to_predict)
 
             # this process calculates the norm of the difference in X of the data and the X we are trying to predict
-            # first we (elementwise) square the distance (in case of norm 2)
-            normed_difference_x = difference_x ** self.norm_order
+            # first we (elementwise) square the distance (norm 2)
+            normed_difference_x = difference_x ** 2
 
             # then we multiply by the importance weights of every output with respect to every input. This outputs a distance with respect to each output
             weighted_distances = np.matmul(self.importanceWeights, normed_difference_x)
 
-            # then we have to undo the (elementwise) power operation from above, typically sqrt in the case of norm 2
-            normed_weighted_distances = weighted_distances ** (1.0/self.norm_order)
+            # then we have to undo the (elementwise) power operation from above, sqrt in the case of norm 2
+            normed_weighted_distances = jp.sqrt(weighted_distances)
 
             # elementwise multiply the distance by the lipschitz constant to get a bound on how much the function value could possibly change. It is shaped like a cone.
             possible_change_output = jp.multiply(self.lipschitzConstants, normed_weighted_distances)
