@@ -113,6 +113,14 @@ def norm(x: ndarray,
   return np.linalg.norm(x, axis=axis)
 
 
+def shape(x: ndarray):
+  """Returns the array shape."""
+  np = _which_np(x)
+  if np is itvl:
+    return x.shape
+  return np.shape(x)
+
+
 def index_update(x: ndarray, idx: ndarray, y: ndarray) -> ndarray:
   """Pure equivalent of x[idx] = y."""
   np = _which_np(x)
@@ -184,6 +192,18 @@ def matmul(x1: ndarray, x2: ndarray) -> ndarray:
   """Matrix product of two arrays."""
   return _which_np(x1, x2).matmul(x1, x2)
 
+def subtract(x1: ndarray, x2: ndarray) -> ndarray:
+  """elementwise subtraction of two arrays."""
+  return _which_np(x1, x2).subtract(x1, x2)
+
+def add(x1: ndarray, x2: ndarray) -> ndarray:
+  """elementwise subtraction of two arrays."""
+  library = _which_np(x1, x2)
+  if library is itvl:
+    print(x1, x2)
+    print(type(x1), type(x2))
+    return library.iv_add(x1, x2)
+  return library.add(x1, x2)
 
 def inv(a: ndarray) -> ndarray:
   """Compute the (multiplicative) inverse of a matrix."""
@@ -252,7 +272,10 @@ def logical_and(x: ndarray, y: ndarray) -> ndarray:
 
 def multiply(x1: ndarray, x2: ndarray) -> ndarray:
   """Multiply arguments element-wise."""
-  return _which_np(x1, x2).multiply(x1, x2)
+  lib = _which_np(x1, x2)
+  if lib == itvl:
+    return itvl.iv_mult(x1, x2)
+  return lib.multiply(x1, x2)
 
 
 def minimum(x1: ndarray, x2: ndarray) -> ndarray:

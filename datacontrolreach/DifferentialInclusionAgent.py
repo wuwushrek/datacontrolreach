@@ -12,10 +12,6 @@ class DifferentialInclusionAgent:
     """ A class to approximate a function given Lipschitz constants for each dimension and data in the form x, Interval of F(x)
     """
     def __init__(self, state_space, action_space, lipschitz_f, lipschitz_g, bound_f=None, bound_g=None, known_f=None, known_g=None):
-        """ Initialize an interval. The lower bound must always be greater that the upper bound
-            :param lb : The lower bound of the interval (vector or matrix)
-            :param ub : The upper bound of the interval (vector or matrix)
-        """
         self.number_states = state_space.shape[0]
         self.number_actions = action_space.shape[0]
         self.state_space = state_space   # maybe dont need this
@@ -39,10 +35,17 @@ class DifferentialInclusionAgent:
         action = np.reshape(action, (len(action), 1))
         state_dot = np.reshape(state_dot, (len(state_dot), 1))
 
+        # find current approximations
+        f_approx = self.f_approximation.approximate(state)
+        g_approx = self.g_approximation.approximate(state)
+
         # calculate new bounds for F at the current state
-        g_total = np.add(self.g_approximation.approximate(state), self.known_g(state))
+        g_total = np.add(g_approx, self.known_g(state))
         g_times_u = np.matmul(g_total, action)
         new_f_interval = np.subtract(np.subtract(state_dot, g_times_u), self.known_f(state))
+
+        # intersect with current approximation
+        new_f_interval = new_f_interval & f_approx
 
         # update the F approximator
         self.f_approximation.add_data(state, new_f_interval)
@@ -52,7 +55,11 @@ class DifferentialInclusionAgent:
         is_non_zero = np.any(action)
         if is_non_zero:
             # calculate new bounds for G at the current state
-            new_g_interval = np.subtract(np.matmul(np.subtract(state_dot, np.add(self.f_approximation.approximate(state), self.known_f(state))), np.linalg.pinv(action)), self.known_g(state))
+            # TODO this is broken
+            new_g_interval = np.subtract(np.matmul(np.subtract(state_dot, np.add(f_approx, self.known_f(state))), np.linalg.pinv(action)), self.known_g(state))
+
+            # intersect with current approximation
+            new_g_interval = new_g_interval & g_approx
 
             # update the G approximator
             self.g_approximation.add_data(state, new_g_interval)
@@ -63,10 +70,10 @@ class DifferentialInclusionAgent:
     # the main action method. Chooses between exploration (which is done via excitation)
     # or exploitation. This decision is made based on the amount of data we have already collected.
     def act(self, state):
-        # exploration
+        # exploration if data collected is small
         if self.data_collected <= self.number_actions:
             return self.excitation(state)
-        # exploitation
+        # exploitation otherwise
         else:
             return self.control_theory(state)
 
@@ -89,6 +96,12 @@ class DifferentialInclusionAgent:
     def control_theory(self, state):
         raise NotImplementedError
 
+    def predict_next_state(self, state, action):
+        # find x dot
+        f_approx = self.f_approximation(state)
+        g_approx = self.g_approximation(state)
+        state_dot = f_approx + g_approx * action
 
+        # convert x dot to next state
 
 
