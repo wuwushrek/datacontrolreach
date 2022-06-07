@@ -1,6 +1,7 @@
 from datacontrolreach.DifferentialInclusionAgent import DifferentialInclusionAgent
 import gym
 import numpy as np
+import jax
 
 env = gym.make("Pendulum-v1")
 num_states = env.observation_space.shape[0]
@@ -28,3 +29,4 @@ for _ in range(1000):
     #    observation, info = env.reset(return_info=True)
 
 env.close()
+

@@ -200,8 +200,6 @@ def add(x1: ndarray, x2: ndarray) -> ndarray:
   """elementwise subtraction of two arrays."""
   library = _which_np(x1, x2)
   if library is itvl:
-    print(x1, x2)
-    print(type(x1), type(x2))
     return library.iv_add(x1, x2)
   return library.add(x1, x2)
 
@@ -485,3 +483,6 @@ def asarray(_object : Any, dtype=None):
 def abs(a: ndarray) -> ndarray:
   """Calculate the absolute value element-wise."""
   return _which_np(a).abs(a)
+
+def dtype(a:ndarray):
+  return a.dtype
