@@ -6,17 +6,17 @@ from datacontrolreach.interval import Interval
 import jax
 from functools import partial
 
-@jax.tree_util.register_pytree_node_class
+# @jax.tree_util.register_pytree_node_class
 class LipschitzApproximator:
     """ A class to approximate a function given Lipschitz constants for each dimension and data in the form x, Interval of F(x)
     """
     def __init__(self, shapeOfInputs, shapeOfOutputs, lipschitzConstants, boundsOnFunctionValues:Interval = None, importanceWeights = None):
-        # check shapes
+        # check shapes to make sure everything is compatible
         assert shapeOfOutputs == jp.shape(lipschitzConstants)
         assert boundsOnFunctionValues is None or shapeOfOutputs == jp.shape(boundsOnFunctionValues)
         assert importanceWeights is None or (shapeOfOutputs + shapeOfInputs) == jp.shape(importanceWeights)
 
-        # check data type. Int does not work!!!!
+        # check data type. Int does not work!!!! (idk why, jax throws errors)
         assert lipschitzConstants.dtype == np.dtype('float64')
         assert boundsOnFunctionValues is None or boundsOnFunctionValues.dtype == np.dtype('float64')
         assert importanceWeights is None or importanceWeights.dtype == np.dtype('float64')
@@ -27,14 +27,13 @@ class LipschitzApproximator:
         self.boundsOnFunctionValues = boundsOnFunctionValues if boundsOnFunctionValues is not None else Interval(jp.full(shapeOfOutputs, float('-inf')), jp.full(shapeOfOutputs, float('inf')))
         self.importanceWeights = importanceWeights if importanceWeights is not None else jp.ones(shapeOfOutputs + shapeOfInputs)
 
-        # The first index is the data index. Initially we have no data so it is 0.
+        # The first index is the data index. Initially we have no data so it is 0. We will add data to these arrays.
         self.x_data = jp.zeros(((0,) + shapeOfInputs))
         self.f_x_data = Interval(jp.zeros(((0, ) + shapeOfOutputs )))
 
     def approximate(self, x_to_predict):
         assert self.shapeOfInputs == jp.shape(x_to_predict)
         assert x_to_predict.dtype == np.dtype('float64')
-
         return f_approximate(self.boundsOnFunctionValues, self.x_data, self.f_x_data, self.importanceWeights, self.lipschitzConstants, x_to_predict)
 
     def add_data(self, x, f_x: Interval):
@@ -44,21 +43,22 @@ class LipschitzApproximator:
         self.f_x_data =   jp.vstack(( self.f_x_data,   jp.reshape(f_x, (1,) + self.shapeOfOutputs)))
 
     # needed to make it a pytree node for jitable, differentiable
-    def tree_flatten(self):
-        children = (self.shapeOfInputs, self.shapeOfOutputs, self.lipschitzConstants, self.boundsOnFunctionValues, self.datapoints,)  # arrays / dynamic values
-        aux_data = None
-        return children, aux_data
+    #def tree_flatten(self):
+    #    children = (self.shapeOfInputs, self.shapeOfOutputs, self.lipschitzConstants, self.boundsOnFunctionValues, self.datapoints,)  # arrays / dynamic values
+    #    aux_data = None
+    #    return children, aux_data
 
-    @classmethod
-    def tree_unflatten(cls, aux_data, children):
-        return cls(*children, **aux_data)
+    #@classmethod
+    #def tree_unflatten(cls, aux_data, children):
+    #    return cls(*children, **aux_data)
 
+
+# Note I have to pull this function out of the class because Jax cannot jit or differentiate class methods
+# So we pull the function out, and call it from the class
 @jax.custom_jvp
 def f_approximate(boundsOnFunctionValues, x_data, f_x_data, importanceWeights, lipschitzConstants, x_to_predict):
     # initial bound is -inf, inf
     f_x_bounds = boundsOnFunctionValues
-
-    print("x_data = ", x_data, type(x_data), np.shape(x_data))
 
     # for each data point, find bound based on lipschitz constants. Then find intersection
     for index in range(jp.shape(x_data)[0]):
@@ -87,11 +87,14 @@ def f_approximate(boundsOnFunctionValues, x_data, f_x_data, importanceWeights, l
     # after intersecting all bounds, return
     return f_x_bounds
 
-
+# We cannot find the derivate at x. However, we do know the Lipschitz constant, so the derivative is between -Lipschitz and +Lipschitz
+# so we can return that
 @f_approximate.defjvp
 def jvp_f_approximate( primal, tangents):
     """ Addition between two intervals
     """
     boundsOnFunctionValues, x_data, f_x_data, importanceWeights, lipschitzConstants, x_to_predict = primal
     boundsOnFunctionValues_dot,  x_data_dot, f_x_data_dot, importanceWeights_dot, lipschitzConstants_dot, x_to_predict_dot = tangents
-    return f_approximate(boundsOnFunctionValues, x_data, f_x_data, importanceWeights, lipschitzConstants, x_to_predict), jp.multiply(Interval(-1.0, 1.0), lipschitzConstants)
+    value = f_approximate(boundsOnFunctionValues, x_data, f_x_data, importanceWeights, lipschitzConstants, x_to_predict)
+    derivative = jp.multiply(Interval(-1.0, 1.0), lipschitzConstants)
+    return value, derivative

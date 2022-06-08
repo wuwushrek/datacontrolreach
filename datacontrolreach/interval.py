@@ -4,7 +4,7 @@ import numpy as np
 import datacontrolreach.jumpy as jp
 from typing import Any, Callable, List, Optional, Sequence, Tuple, TypeVar, Union
 from functools import partial
-
+import copy
 CHECK_VALID_INTERVAL = False
 
 # jax_jit = jax.jit
@@ -26,7 +26,7 @@ class Interval:
         else:
             # TODO : Do not copy ndarray here, use the correct value
             self._lb = jp.array(lb)
-            self._ub = jp.array(ub) if ub is not None else jp.array(lb)
+            self._ub = jp.array(ub) if ub is not None else copy.deepcopy(jp.array(lb)) # this must be a deep copy
 
         # Check if the interval makes sense --> Lower bound less than upper bound
         if CHECK_VALID_INTERVAL:
