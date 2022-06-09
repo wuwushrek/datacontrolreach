@@ -267,15 +267,6 @@ def logical_and(x: ndarray, y: ndarray) -> ndarray:
   """Returns the truth value of x AND y element-wise."""
   return _which_np(x,y).logical_and(x, y)
 
-
-def multiply(x1: ndarray, x2: ndarray) -> ndarray:
-  """Multiply arguments element-wise."""
-  lib = _which_np(x1, x2)
-  if lib == itvl:
-    return itvl.iv_mult(x1, x2)
-  return lib.multiply(x1, x2)
-
-
 def minimum(x1: ndarray, x2: ndarray) -> ndarray:
   """Element-wise minimum of array elements."""
   return _which_np(x1, x2).minimum(x1, x2)

@@ -27,15 +27,15 @@ class Interval:
             # TODO : Do not copy ndarray here, use the correct value
             self._lb = jp.array(lb)
             self._ub = jp.array(ub) if ub is not None else copy.deepcopy(jp.array(lb)) # this must be a deep copy
-
+            assert jp.shape(self._ub) == jp.shape(self._lb) # make sure dims are the same!
         # Check if the interval makes sense --> Lower bound less than upper bound
         if CHECK_VALID_INTERVAL:
             no_lb_less_ub = self._lb >= self._ub
             self._lb = jp.where(no_lb_less_ub, -jp.inf, self._lb)
             self._ub = jp.where(no_lb_less_ub, jp.inf, self._ub)
 
-    #__numpy_ufunc__ = None
-    #__array_ufunc__ = None
+    __numpy_ufunc__ = None # these are needed to make numpy behave when we multiply numpy array element wise * interval array
+    __array_ufunc__ = None # if you remove these, numpy handles the elementwise multiplication and returns an array of intervals, instead of an interval
 
     # Arithmetic
     def __add__(self, other):
@@ -363,6 +363,7 @@ def scan_interval(f, init, xs, length=None, reverse=False, unroll: int = 1):
             xs_slice = [x[i] for x in xs_flat]
             carry, y = f(carry, jax.tree_unflatten(xs_tree, xs_slice))
             ys.append(y)
+
         stacked_y = jax.tree_map(lambda *y: jp.stack(y), *maybe_reversed(ys))
         return carry, stacked_y
 
@@ -383,7 +384,7 @@ def concatenate(x: Sequence[Interval], axis=0) -> Interval:
 
 def vstack(x: Sequence[Interval]) -> Interval:
     """Join a sequence of arrays along an existing axis."""
-    return Interval(lb=jp.vstack([(_x.lb if _x.ndim>0 else _x.lb.reshape((1,))) for _x in x]), 
+    return Interval(lb=jp.vstack([(_x.lb if _x.ndim>0 else _x.lb.reshape((1,))) for _x in x]),
                     ub=jp.vstack([(_x.ub if _x.ndim>0 else _x.lb.reshape((1,))) for _x in x]))
 
 def where(cond, x, y):
@@ -436,6 +437,7 @@ transpose = lambda x1, axes=None : x1.transpose(axes)
 reshape = lambda a, newshape : a.reshape(newshape)
 array = lambda a, dtype=None : block_array(a, dtype)
 full = lambda shape, fill_value, dtype=None : Interval(lb=jp.full(shape, fill_value.lb), ub=jp.full(shape, fill_value.ub))
+subtract = lambda x,y: iv_sub(x, y)
 
 # Define the JVP rules for the interval arithmetic
 @partial(jax.custom_jvp)

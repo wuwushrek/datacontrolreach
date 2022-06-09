@@ -98,7 +98,7 @@ def test_jacobian_approximate(seed):
     value, derivative = jax.jvp(f_approximate,
                                 (lipAprox.boundsOnFunctionValues, lipAprox.x_data, lipAprox.f_x_data, lipAprox.importanceWeights, lipAprox.lipschitzConstants, x1),
                                 (lipAprox.boundsOnFunctionValues, lipAprox.x_data, lipAprox.f_x_data, lipAprox.importanceWeights, lipAprox.lipschitzConstants, x1))
-    assert (derivative == jp.multiply(Interval(-1.0, 1.0), lipschitz)).all(), 'Jacobian for Subtraction between intervals fails : {} , {}\n'.format(derivative, jp.multiply(Interval(-1.0, 1.0), lipschitz).all())
+    assert (derivative == Interval(-1.0, 1.0) * lipschitz).all(), 'Jacobian for Subtraction between intervals fails : {} , {}\n'.format(derivative, Interval(-1.0, 1.0) * lipschitz).all()
 
 def test_jacobian_approximate_2d(seed):
     np.random.seed(seed)
@@ -118,4 +118,4 @@ def test_jacobian_approximate_2d(seed):
     value, derivative = jax.jvp(f_approximate,
                                 (lipAprox.boundsOnFunctionValues, lipAprox.x_data, lipAprox.f_x_data, lipAprox.importanceWeights, lipAprox.lipschitzConstants, x1),
                                 (lipAprox.boundsOnFunctionValues, lipAprox.x_data, lipAprox.f_x_data, lipAprox.importanceWeights, lipAprox.lipschitzConstants, x1))
-    assert (derivative == jp.multiply(Interval(-1.0, 1.0), lipschitz)).all(), 'Jacobian for Subtraction between intervals fails : {} , {}\n'.format(derivative, jp.multiply(Interval(-1.0, 1.0), lipschitz).all())
+    assert (derivative == Interval(-1.0, 1.0) * lipschitz).all(), 'Jacobian for Subtraction between intervals fails : {} , {}\n'.format(derivative, Interval(-1.0, 1.0) *  lipschitz).all()
