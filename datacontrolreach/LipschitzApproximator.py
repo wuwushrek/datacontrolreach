@@ -12,7 +12,7 @@ class LipschitzApproximator:
     """
     def __init__(self, shapeOfInputs, shapeOfOutputs, lipschitzConstants, boundsOnFunctionValues:Interval = None, importanceWeights = None):
         # check shapes to make sure everything is compatible
-        assert shapeOfOutputs == jp.shape(lipschitzConstants)
+        assert shapeOfOutputs == jp.shape(lipschitzConstants), 'Shape of outputs {} does not match shape of Lipschitz constants {}\n'.format(shapeOfOutputs, jp.shape(lipschitzConstants))
         assert boundsOnFunctionValues is None or shapeOfOutputs == jp.shape(boundsOnFunctionValues)
         assert importanceWeights is None or (shapeOfOutputs + shapeOfInputs) == jp.shape(importanceWeights)
 
@@ -24,12 +24,16 @@ class LipschitzApproximator:
         self.shapeOfInputs = shapeOfInputs
         self.shapeOfOutputs = shapeOfOutputs
         self.lipschitzConstants = lipschitzConstants
-        self.boundsOnFunctionValues = boundsOnFunctionValues if boundsOnFunctionValues is not None else Interval(jp.full(shapeOfOutputs, float('-inf')), jp.full(shapeOfOutputs, float('inf')))
+        # Assume some large function bounds if not provided. Do not assume infinity, even though its mathematically better, because it causes NaN
+        self.boundsOnFunctionValues = boundsOnFunctionValues if boundsOnFunctionValues is not None else Interval(jp.full(shapeOfOutputs, -1000000.0), jp.full(shapeOfOutputs, 1000000))
         self.importanceWeights = importanceWeights if importanceWeights is not None else jp.ones(shapeOfOutputs + shapeOfInputs)
 
         # The first index is the data index. Initially we have no data so it is 0. We will add data to these arrays.
         self.x_data = jp.zeros(((0,) + shapeOfInputs))
         self.f_x_data = Interval(jp.zeros(((0, ) + shapeOfOutputs )))
+
+    def __call__(self, x_to_predict):
+        return self.approximate(x_to_predict)
 
     def approximate(self, x_to_predict):
         assert self.shapeOfInputs == jp.shape(x_to_predict), 'x_to_predict size wrong. Expected {} , got {}\n'.format(self.shapeOfInputs, jp.shape(x_to_predict))

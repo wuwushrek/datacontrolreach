@@ -1,6 +1,5 @@
  # has to go in this order because of circular dependencies....
 import copy
-import numpy as np
 import datacontrolreach.jumpy as jp
 from datacontrolreach import interval
 from datacontrolreach.interval import Interval
@@ -18,9 +17,9 @@ class DifferentialInclusionAgent:
         self.state_space = state_space   # maybe dont need this
         self.action_space = action_space  # only used during excitation
         if bound_f is None:
-            bound_f = Interval(np.full((self.number_states,), -1000000.0), np.full((self.number_states, ), 1000000.0))
+            bound_f = Interval(jp.full((self.number_states,), -1000000.0), jp.full((self.number_states, ), 1000000.0))
         if bound_g is None:
-            bound_g = Interval(np.full((self.number_states, self.number_actions), -1000000.0), np.full((self.number_states, self.number_actions), 1000000.0))
+            bound_g = Interval(jp.full((self.number_states, self.number_actions), -1000000.0), jp.full((self.number_states, self.number_actions), 1000000.0))
         self.f_approximation = LipschitzApproximator((self.number_states, ), (self.number_states, ),                   lipschitz_f, bound_f)
         self.g_approximation = LipschitzApproximator((self.number_states, ), (self.number_states, self.number_actions), lipschitz_g, bound_g)
         self.known_f = known_f if known_f is not None else lambda x: jp.zeros((self.number_states,))
@@ -58,7 +57,7 @@ class DifferentialInclusionAgent:
     # this is to explore how the action space affects the environment
     # note the first action we ever take is all 0s
     def excitation(self, state):
-        ret = np.zeros((self.number_actions, ))
+        ret = jp.zeros((self.number_actions, ))
         if self.data_collected == 0:
             return ret
         elif 0 < self.data_collected <= self.number_actions:
@@ -71,8 +70,10 @@ class DifferentialInclusionAgent:
             return ret
 
     def control_theory(self, state):
-        raise NotImplementedError
+        return self.action_space.sample()
+        # raise NotImplementedError
 
+    # action is an interval, so it can either find state dot for a given action or for a set of possible actions
     def predict_next_state(self, state, action):
         # find x dot
         f_approx = self.f_approximation(state)
@@ -99,21 +100,19 @@ class DifferentialInclusionAgent:
     def contract_g(self, state, state_dot, action, f_approx, g_approx):
         # verify action matrix is not all 0. If it is all 0, we cannot update G
         # if even a single element is non-zero, we can update G
-        non_zero = np.any(action)
+        non_zero = jp.any(action)
         if not non_zero:
             return
 
         # calculate new bounds for G at the current state
         X = state_dot - (f_approx + self.known_f(state))
 
-        new_g_interval = {}
+        # initialize new g to be an empty array
+        # we are going to go line by line, adding an updated row to it each time
+        new_g_interval = Interval(jp.zeros((0, jp.shape(g_approx)[1])))
         for row in range(len(state)):
-            print("state_row", state[row])
-            print("action", action)
-            print("g_approx[row]", g_approx[row], type(g_approx[row]), "\n\n")
-            g_row = contract_row_wise(state[row], action, g_approx[row])
-            new_g_interval.add(g_row)
-        #print("new_g_interval = ", new_g_interval)
+            g_row = contract_row_wise(X[row], g_approx[row], action )
+            new_g_interval = jp.vstack((new_g_interval, g_row))
 
         # update the G approximator
         self.g_approximation.add_data(state, new_g_interval)
@@ -161,14 +160,6 @@ def hc4revise_lin_eq(rhs : jp.ndarray, coeffs : jp.ndarray, unk : Interval):
         carry = (carry - (Cunk * _c)) & _csum
         return carry, Cunk
 
-    print("\n\nunk", unk)
-    print("coeffs", coeffs)
-    print("_S", _S)
-
-    print("\nunk[:-1]", unk[:-1])
-    print("coeffs[:-1]", coeffs[:-1])
-    print("_S[::-1][1:]", _S[::-1][1:])
-
     unk_last, cunk = interval.scan_interval(op, Csum, (unk[:-1], coeffs[:-1], _S[::-1][1:]))
     # Trick to avoid division by zero
     _coeff_nzeros = jp.logical_or(coeffs[-1] > 0, coeffs[-1] < 0)
@@ -212,8 +203,8 @@ def hc4revise_lin_eq(rhs : jp.ndarray, coeffs : jp.ndarray, unk : Interval):
             # use the sum (which is the dot product of all elements except the one we are trying to approximate)
             # plus the X result and the U which corresponds to the G we are trying to predict
             approx = (X - sum) / U[i]
-            new_G_approx.ub[i] = approx.ub
-            new_G_approx.lb[i] = approx.lb
+            new_G_approx.ub = new_G_approx.ub.at[i].set(approx.ub)
+            new_G_approx.lb = new_G_approx.lb.at[i].set(approx.lb)
             new_G_approx = G_approx & new_G_approx
 
     return G_approx & new_G_approx # intersect old estimate and new'''
