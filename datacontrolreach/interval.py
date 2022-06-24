@@ -246,7 +246,7 @@ class Interval:
     def __eq__(self, other):
         lb_val = other.lb if isinstance(other, Interval) else other
         ub_val = other.ub if isinstance(other, Interval) else other
-        return jp.logical_and(self._lb == lb_val, self._ub == ub_val)
+        return jp.logical_and(abs(self._lb - lb_val) < 0.00001, abs(self._ub - ub_val) < 0.00001)
 
     def __ge__(self, other):
         ub_val = other.ub if isinstance(other, Interval) else other

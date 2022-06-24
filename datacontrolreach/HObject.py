@@ -6,6 +6,8 @@ from datacontrolreach.interval import Interval
 from datacontrolreach.LipschitzApproximator import LipschitzApproximator
 import jax
 import random
+from functools import partial
+from jax import jit
 
 
 class HObject:
@@ -16,7 +18,7 @@ class HObject:
 
         self.shape_x = shape_x
         self.shape_u = shape_u
-        self.known_functions = known_functions # must be a list of functions of X
+        self.known_functions = known_functions # must be a list of functions of X, U
         self.unknown_approximations = unknown_approximations # must be a list of LipschitzApproximators which take in X
         self.H = H # the function specifying how to calculate x dot
                    # Takes in inputs X,U and uses the known and unknown functions of X
@@ -44,36 +46,44 @@ class HObject:
 
 
 
-# Assume we have X = G*U
-# We are trying to calculate X * U^-1 = G, which is a contraction for G
-# Normal pseudo-inverse operation is not sufficient. The current estimate of G allows us to be more precise
+# Assume we have A = B * C
+# We are trying to calculate A * C^-1 = B, which is a contraction for B
+# Normal pseudo-inverse operation is not sufficient. The current estimate of B allows us to be more precise
 # than a pseudo-inverse.
-# Given values for X, U and an estimate for G, we can contract the approximation for G
-def inverse_contraction(X, G_approx:Interval, U):
-    new_g_interval = Interval(jp.zeros((0, jp.shape(G_approx)[1])))
-    for row in range(len(X)):
-        g_row = contract_row_wise(X[row], G_approx[row], U)
-        new_g_interval = jp.vstack((new_g_interval, g_row))
-    return new_g_interval
+# Given values for A, C and an estimate for B, we can contract the approximation for B
+def inverse_contraction_B(A, B_approx:Interval, C):
+    new_b_interval = Interval(jp.zeros((jp.shape(B_approx))))
+    carry = (A, C, 0) # third one is index
+    xs = new_b_interval
+    def row_wise(carry, x):
+        y = contract_row_wise(carry[0][carry[2]], x, carry[1])
+        return (carry[0], carry[1], carry[2] + 1), y
+    carry, ys = jax.lax.scan(row_wise, carry, xs)
+    return ys
+
+# Assume we have A = B * C
+# We are trying to calculate B^-1 * A = C, which is a contraction for C
+# Normal pseudo-inverse operation is not sufficient. The current estimate of C allows us to be more precise
+# than a pseudo-inverse.
+# Given values for A, B and an estimate for C, we can contract the approximation for C
+def inverse_contraction_C(A, B, C_approx:Interval):
+    new_c_interval = Interval(jp.zeros((jp.shape(C_approx))))
+    carry = (A, B, 0) # third one is index
+    xs = new_c_interval
+    def row_wise(carry, x):
+        y = contract_row_wise(carry[0][carry[2]], x, carry[1])
+        return (carry[0], carry[1], carry[2] + 1), y
+    carry, ys = jax.lax.scan(row_wise, carry, xs)
+    return ys
 
 
-# this function is designed to find contractions for a single row.
-# Assume we have X = G*U
-# We are trying to calculate X * U^-1 = G, which is a contraction for G
-# Normal pseudo-inverse operation is not sufficient. The current estimate of G allows us to be more precise
-# than a pseudo-inverse.
-# Given values for X, U and an estimate for G, we can contract the approximation for G
-# For jit purposes, we want to be able to do this rowwise. Row wise, we get the following for each row:
-# X_i = Sum for m = 1 to the length(U) of (G_approximate_i_m * U_m )
-# Solving for each value of G, we get
-# new_G_approx_i_a = (X_i - Sum for m = 1 to the length(U) except m=a of (G_approximate_i_m * U_m )) / U_a
-# This function expects X to be a scalar, G_approx to be a vector of intervals, and U to be a vector of scalars
-# Returns a contract vector of intervals representing G
-def contract_row_wise(X, G_approx: Interval, U):
-    print("X", X, type(X))
-    print("G_approx", G_approx, type(G_approx))
-    print("U", U, type(U))
-    return hc4revise_lin_eq(X, U, G_approx)
+# this function is designed to find contractions for a single row of either B or C
+# A (scalar) = Sum(B(vector) * C(vector))
+# Since B and C are both vectors, which one we contract only changes the order. This allows us to solve either B or C
+# simply swap the order of the arguments
+# Returns a contracted vector of intervals
+def contract_row_wise(A, B_approx: Interval, C):
+    return hc4revise_lin_eq(A, C, B_approx)
 
 
 def hc4revise_lin_eq(rhs : jp.ndarray, coeffs : jp.ndarray, unk : Interval):
@@ -96,7 +106,7 @@ def hc4revise_lin_eq(rhs : jp.ndarray, coeffs : jp.ndarray, unk : Interval):
         # Trick to avoid division by 0
         zero_notin_c = jp.logical_or(_c > 0, _c < 0)
         _ct = jp.where(zero_notin_c, _c, 1.)
-        Cunk = jp.where(zero_notin_c, ((carry - _csum) & (_c * _unk))/_ct, _unk)
+        Cunk = jp.where(zero_notin_c, ((carry - _csum) & (_c * _unk))/_ct, _unk) ################# Here
         # Use the newly Cunk to provide a contraction of the remaining sum
         carry = (carry - (Cunk * _c)) & _csum
         return carry, Cunk
