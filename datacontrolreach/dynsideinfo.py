@@ -315,12 +315,8 @@ def hc4revise_lin_eq(rhs : jp.ndarray, coeffs : jp.ndarray, unk : iv):
         carry = (carry - (Cunk * _c)) & _csum
         return carry, Cunk
 
-    unk_last, cunk = interval.scan_interval(op, Csum, (unk[:-1], coeffs[:-1], _S[::-1][1:]))
-    # Trick to avoid division by zero
-    _coeff_nzeros = jp.logical_or(coeffs[-1] > 0, coeffs[-1] < 0)
-    _coeff1 = jp.where(_coeff_nzeros, coeffs[-1], 1.)
-    unk_last = jp.where(_coeff_nzeros, unk_last /_coeff1,  unk[-1])
-    return interval.concatenate((cunk, unk_last))
+    _, cunk = interval.scan_interval(op, Csum, (unk, coeffs, interval.concatenate((_S[::-1], iv(0.)))[1:]) )
+    return cunk
 
 def hc4revise_lin_leq(rhs : Union[jp.ndarray, iv], coeffs : jp.ndarray, unk : iv):
     """ Apply HC4Revise for the constraint coeffs @ vars <= rhs and return the contracted vars
@@ -346,12 +342,8 @@ def hc4revise_lin_leq(rhs : Union[jp.ndarray, iv], coeffs : jp.ndarray, unk : iv
         carry = (carry - (Cunk * _c)) & _csum
         return carry, Cunk
 
-    unk_last, cunk = interval.scan_interval(op, Csum, (unk[:-1], coeffs[:-1], _S[::-1][1:]))
-    # Trick to avoid division by zero
-    _coeff_nzeros = jp.logical_or(coeffs[-1] > 0, coeffs[-1] < 0)
-    _coeff1 = jp.where(_coeff_nzeros, coeffs[-1], 1.)
-    unk_last = jp.where(_coeff_nzeros, unk_last /_coeff1,  unk[-1])
-    return interval.concatenate((cunk, unk_last))
+    _, cunk = interval.scan_interval(op, Csum, (unk, coeffs, interval.concatenate((_S[::-1], iv(0.)))[1:]) )
+    return cunk
 
 def hc4revise_lin_geq(rhs : Union[jp.ndarray, iv], coeffs : jp.ndarray, unk : iv):
     """ Apply HC4Revise for the constraint coeffs @ vars >= rhs and return the contracted vars
@@ -377,12 +369,8 @@ def hc4revise_lin_geq(rhs : Union[jp.ndarray, iv], coeffs : jp.ndarray, unk : iv
         carry = (carry - (Cunk * _c)) & _csum
         return carry, Cunk
 
-    unk_last, cunk = interval.scan_interval(op, Csum, (unk[:-1], coeffs[:-1], _S[::-1][1:]))
-    # Trick to avoid division by zero
-    _coeff_nzeros = jp.logical_or(coeffs[-1] > 0, coeffs[-1] < 0)
-    _coeff1 = jp.where(_coeff_nzeros, coeffs[-1], 1.)
-    unk_last = jp.where(_coeff_nzeros, unk_last /_coeff1,  unk[-1])
-    return interval.concatenate((cunk, unk_last))
+    _, cunk = interval.scan_interval(op, Csum, (unk, coeffs, interval.concatenate((_S[::-1], iv(0.)))[1:]) )
+    return cunk
 
 
 
