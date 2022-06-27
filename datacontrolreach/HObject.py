@@ -5,6 +5,7 @@ from datacontrolreach import interval
 from datacontrolreach.interval import Interval
 from datacontrolreach.LipschitzApproximator import LipschitzApproximator
 import jax
+import jax.experimental.host_callback
 import random
 from functools import partial
 from jax import jit
@@ -55,6 +56,7 @@ def inverse_contraction_B(A, B_approx:Interval, C):
     new_b_interval = Interval(jp.zeros((jp.shape(B_approx))))
     carry = (A, C, 0) # third one is index
     xs = new_b_interval
+
     def row_wise(carry, x):
         y = contract_row_wise(carry[0][carry[2]], x, carry[1])
         return (carry[0], carry[1], carry[2] + 1), y
@@ -83,7 +85,17 @@ def inverse_contraction_C(A, B, C_approx:Interval):
 # simply swap the order of the arguments
 # Returns a contracted vector of intervals
 def contract_row_wise(A, B_approx: Interval, C):
+    if len(jp.shape(A)) > 1:
+        A = jp.reshape(A, jp.shape(A)[0])
+    if len(jp.shape(B_approx)) > 1:
+        B_approx = jp.reshape(B_approx, jp.shape(B_approx)[0])
+    if len(jp.shape(C)) > 1:
+        C = jp.reshape(C, jp.shape(C)[0])
+    print("A = ", type(A))
+    print("B = ", type(B_approx))
+    print("C = ", type(C))
     return hc4revise_lin_eq(A, C, B_approx)
+
 
 
 def hc4revise_lin_eq(rhs : jp.ndarray, coeffs : jp.ndarray, unk : Interval):
@@ -95,7 +107,6 @@ def hc4revise_lin_eq(rhs : jp.ndarray, coeffs : jp.ndarray, unk : Interval):
     """
     # Save temporary higher order sums
     _S = unk * coeffs
-
     _S_lb, _S_ub = jp.cumsum(_S.lb[::-1]), jp.cumsum(_S.ub[::-1])
     _S = Interval(lb=_S_lb, ub=_S_ub)
     Csum = _S[-1] & rhs # The sum and the rhs are equals
@@ -106,18 +117,13 @@ def hc4revise_lin_eq(rhs : jp.ndarray, coeffs : jp.ndarray, unk : Interval):
         # Trick to avoid division by 0
         zero_notin_c = jp.logical_or(_c > 0, _c < 0)
         _ct = jp.where(zero_notin_c, _c, 1.)
-        Cunk = jp.where(zero_notin_c, ((carry - _csum) & (_c * _unk))/_ct, _unk) ################# Here
+        Cunk = jp.where(zero_notin_c, ((carry - _csum) & (_c * _unk))/_ct, _unk)
         # Use the newly Cunk to provide a contraction of the remaining sum
         carry = (carry - (Cunk * _c)) & _csum
         return carry, Cunk
 
-    unk_last, cunk = interval.scan_interval(op, Csum, (unk[:-1], coeffs[:-1], _S[::-1][1:]))
-    # Trick to avoid division by zero
-    _coeff_nzeros = jp.logical_or(coeffs[-1] > 0, coeffs[-1] < 0)
-    _coeff1 = jp.where(_coeff_nzeros, coeffs[-1], 1.)
-    unk_last = jp.where(_coeff_nzeros, unk_last /_coeff1,  unk[-1])
-    return interval.concatenate((cunk, unk_last))
-
+    _, cunk = interval.scan_interval(op, Csum, (unk, coeffs, interval.concatenate((_S[::-1], Interval(0.)))[1:]) )
+    return cunk
 
 
 
