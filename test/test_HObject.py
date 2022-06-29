@@ -66,17 +66,37 @@ def test_contract_row_wise(seed):
     assert (hc4revise_lin_eq(x, u, g) == new_approx).all(), '6. row wise contraction fails : {} , {}\n'.format(hc4revise_lin_eq(x, u, g), new_approx)
 
 
+
 def test_contract_C(seed):
 
     # Generate the data for test
     A = jp.array([1,2,3]) # 3x1
     B = jp.ones((3,2))          # 3x2
     C = Interval(jp.array([-10.0, -10.0]), jp.array([10.0, 10.0])) # 2x1
-
     new_c = inverse_contraction_C(A, B, C)
-    print(new_c)
-    # assert (answer == new_approx).all(), '1. row wise contraction fails : {} , {}\n'.format(answer, new_approx)
-# test_contract_C(1)
+    expected = Interval(jp.array([[-7.0, -7.0]]), jp.array([[10.0, 10.0]]))
+    assert (new_c == expected).all(), '1. C contraction fails : {} , {}\n'.format(new_c, expected)
+
+    A = jp.array([1,2,3]) # 3x1
+    B = jp.zeros((3,2))          # 3x2
+    C = Interval(jp.array([-10.0, -10.0]), jp.array([10.0, 10.0])) # 2x1
+    new_c = inverse_contraction_C(A, B, C)
+    expected = Interval(jp.array([-10.0, -10.0]), jp.array([10.0, 10.0]))
+    assert (new_c == expected).all(), '2. C contraction fails : {} , {}\n'.format(new_c, expected)
+
+    A = jp.array([1]) # 1x1
+    B = jp.zeros((1,2))          #1x2
+    C = Interval(jp.array([-10.0, -10.0]), jp.array([10.0, 10.0])) # 2x1
+    new_c = inverse_contraction_C(A, B, C)
+    expected = Interval(jp.array([-10.0, -10.0]), jp.array([10.0, 10.0]))
+    assert (new_c == expected).all(), '2. C contraction fails : {} , {}\n'.format(new_c, expected)
+
+    A = jp.array([1]) # 1x1
+    B = jp.ones((1,2))          #1x2
+    C = Interval(jp.array([-10.0, -10.0]), jp.array([10.0, 10.0])) # 2x1
+    new_c = inverse_contraction_C(A, B, C)
+    expected = Interval(jp.array([-9.0, -9.0]), jp.array([10.0, 10.0]))
+    assert (new_c == expected).all(), '2. C contraction fails : {} , {}\n'.format(new_c, expected)
 
 def test_contract_B(seed):
 
@@ -85,12 +105,35 @@ def test_contract_B(seed):
     B = Interval(jp.array([[-10.0, -10.0], [-10.0, -10.0], [-10.0, -10.0]]),
                 jp.array([[10.0, 10.0], [10.0, 10.0], [10.0, 10.0]]))           # 3x2
     C = jp.ones((2,1))# 2x1
-
     new_b = inverse_contraction_B(A, B, C)
-    print(new_b)
-    # assert (answer == new_approx).all(), '1. row wise contraction fails : {} , {}\n'.format(answer, new_approx)
-test_contract_B(1)
+    expected = Interval(jp.array([[-9.0, -9.0],[-8.0, -8.0],[-7.0, -7.0] ]),
+                        jp.array([[10.0, 10.0],[10.0, 10.0],[10.0, 10.0] ]))
+    assert (new_b == expected).all(), '1. B contraction fails : {} , {}\n'.format(new_b, expected)
 
+    A = jp.array([[1],[2],[3]]) # 3x1
+    B = Interval(jp.array([[-10.0, -10.0], [-10.0, -10.0], [-10.0, -10.0]]),
+                jp.array([[10.0, 10.0], [10.0, 10.0], [10.0, 10.0]]))           # 3x2
+    C = jp.zeros((2,1))# 2x1
+    new_b = inverse_contraction_B(A, B, C)
+    expected = Interval(jp.array([[-10.0, -10.0],[-10.0, -10.0],[-10.0, -10.0] ]),
+                        jp.array([[10.0, 10.0],[10.0, 10.0],[10.0, 10.0] ]))
+    assert (new_b == expected).all(), '2. B contraction fails : {} , {}\n'.format(new_b, expected)
+
+    A = jp.array([[1]]) # 1x1
+    B = Interval(jp.array([[-10.0, -10.0]]),
+                jp.array([[10.0, 10.0]]))           # 1x2
+    C = jp.zeros((2,1))# 2x1
+    new_b = inverse_contraction_B(A, B, C)
+    expected = Interval(jp.array([[-10.0, -10.0]]), jp.array([[10.0, 10.0]]))
+    assert (new_b == expected).all(), '2. B contraction fails : {} , {}\n'.format(new_b, expected)
+
+    A = jp.array([[1]]) # 1x1
+    B = Interval(jp.array([[-10.0, -10.0]]),
+                jp.array([[10.0, 10.0]]))           # 1x2
+    C = jp.ones((2,1))# 2x1
+    new_b = inverse_contraction_B(A, B, C)
+    expected = Interval(jp.array([[-9.0, -9.0]]), jp.array([[10.0, 10.0]]))
+    assert (new_b == expected).all(), '2. B contraction fails : {} , {}\n'.format(new_b, expected)
 
 def test_H_object(seed):
     # Generate the data for test
@@ -133,6 +176,9 @@ def test_H_object(seed):
                               jp.array([10.0 + math.sqrt(3.0) * 10, 30 + math.sqrt(3.0) * 5, 45 + math.sqrt(3) * 3]))
     result = h_obj.get_x_dot(x, u)
     assert (expected_x_dot == result).all(), '3.H object prediction error. Expected {} , got {}\n'.format(expected_x_dot, result)
+
+
+test_H_object(1)
 
 def test_H_object2(seed):
     # Generate the data for test

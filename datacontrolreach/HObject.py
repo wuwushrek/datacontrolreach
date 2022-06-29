@@ -53,14 +53,12 @@ class HObject:
 # than a pseudo-inverse.
 # Given values for A, C and an estimate for B, we can contract the approximation for B
 def inverse_contraction_B(A, B_approx:Interval, C):
-    new_b_interval = Interval(jp.zeros((jp.shape(B_approx))))
     carry = (A, C, 0) # third one is index
-    xs = new_b_interval
 
     def row_wise(carry, x):
         y = contract_row_wise(carry[0][carry[2]], x, carry[1])
         return (carry[0], carry[1], carry[2] + 1), y
-    carry, ys = jax.lax.scan(row_wise, carry, xs)
+    carry, ys = jax.lax.scan(row_wise, carry, B_approx)
     return ys
 
 # Assume we have A = B * C
@@ -69,14 +67,13 @@ def inverse_contraction_B(A, B_approx:Interval, C):
 # than a pseudo-inverse.
 # Given values for A, B and an estimate for C, we can contract the approximation for C
 def inverse_contraction_C(A, B, C_approx:Interval):
-    new_c_interval = Interval(jp.zeros((jp.shape(C_approx))))
-    carry = (A, B, 0) # third one is index
-    xs = new_c_interval
+    carry = (A, C_approx, 0) # third one is index
+
     def row_wise(carry, x):
-        y = contract_row_wise(carry[0][carry[2]], x, carry[1])
-        return (carry[0], carry[1], carry[2] + 1), y
-    carry, ys = jax.lax.scan(row_wise, carry, xs)
-    return ys
+        y = contract_row_wise(carry[0][carry[2]], carry[1], x)
+        return (carry[0], carry[1] & y, carry[2] + 1), y
+    carry, ys = jax.lax.scan(row_wise, carry, B)
+    return carry[1]
 
 
 # this function is designed to find contractions for a single row of either B or C
@@ -85,15 +82,16 @@ def inverse_contraction_C(A, B, C_approx:Interval):
 # simply swap the order of the arguments
 # Returns a contracted vector of intervals
 def contract_row_wise(A, B_approx: Interval, C):
-    if len(jp.shape(A)) > 1:
-        A = jp.reshape(A, jp.shape(A)[0])
+    if len(jp.shape(A)) > 0:
+        A = A[0]
     if len(jp.shape(B_approx)) > 1:
         B_approx = jp.reshape(B_approx, jp.shape(B_approx)[0])
     if len(jp.shape(C)) > 1:
         C = jp.reshape(C, jp.shape(C)[0])
-    print("A = ", type(A))
-    print("B = ", type(B_approx))
-    print("C = ", type(C))
+    # C = Interval(C)
+    print("A = ", type(A), jp.shape(A))
+    print("B_approx = ", type(B_approx), jp.shape(B_approx))
+    print("C = ", type(C), jp.shape(C))
     return hc4revise_lin_eq(A, C, B_approx)
 
 
