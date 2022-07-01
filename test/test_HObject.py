@@ -73,6 +73,7 @@ def test_contract_row_wise(seed):
     assert (answer == new_approx).all(), '7. row wise contraction fails : {} , {}\n'.format(answer, new_approx)
     assert (hc4revise_lin_eq(x, u, g) == new_approx).all(), '7. row wise contraction fails : {} , {}\n'.format(hc4revise_lin_eq(x, u, g), new_approx)
 
+
 def test_contract_C(seed):
 
     # Generate the data for test
@@ -184,8 +185,6 @@ def test_H_object(seed):
     assert (expected_x_dot == result).all(), '3.H object prediction error. Expected {} , got {}\n'.format(expected_x_dot, result)
 
 
-test_H_object(1)
-
 def test_H_object2(seed):
     # Generate the data for test
     # This is the test case where H = (F(X) + Fknown(x)) + (G(X) + Gknown(x))*U
@@ -290,11 +289,12 @@ def test_H_object4(seed):
     H = lambda x, u, known, unknown: known[0](x,u) + jp.matmul(known[1](x,u), unknown[0](x))
 
     unknown_approximators = [
-        LipschitzApproximator(shape_x, (k, shape_x[0]), jp.ones((k, shape_x[0]))), # lipschitz is all 1's
+        LipschitzApproximator(shape_x, (k,), jp.ones((k,))), # lipschitz is all 1's
     ]
     contractions = [
-        lambda x, u, xdot, known, unknown: xdot - known[0](x,u) - jp.matmul((unknown[1](x) + known[1](x)), u),  # F(X) = xdot - G(X) * U
-    ]  # TODO
+        lambda x, u, xdot, known, unknown: inverse_contraction_C(xdot - known[0](x,u), known[1](x, u), unknown[0](x))
+
+    ]
 
     h_obj = HObject(shape_x, shape_u, known_functions, unknown_approximators, H, contractions)
 
@@ -316,5 +316,4 @@ def test_H_object4(seed):
     result = h_obj.get_x_dot(x, u)
     assert (expected_x_dot == result).all(), '3.H object prediction error. Expected {} , got {}\n'.format(expected_x_dot, result)
 
-
-
+test_H_object4(1)

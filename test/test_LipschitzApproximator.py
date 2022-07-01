@@ -80,6 +80,7 @@ def test_approximate_weights(seed):
     answer = Interval(np.array([0.0, -math.sqrt(7.0**2) * 5.0]), np.array([0.0, math.sqrt(7.0**2) * 5.0]))
     assert (lipAprox.approximate(x2) == answer).all(), '5. Approximation fails : {} , {}\n'.format(lipAprox.approximate(x2), answer)
 
+# [TODO]: Change Jacobian Test according to the change in f_approximation jvp
 def test_jacobian_approximate(seed):
     np.random.seed(seed)
 
@@ -119,3 +120,4 @@ def test_jacobian_approximate_2d(seed):
                                 (lipAprox.boundsOnFunctionValues, lipAprox.x_data, lipAprox.f_x_data, lipAprox.importanceWeights, lipAprox.lipschitzConstants, x1),
                                 (lipAprox.boundsOnFunctionValues, lipAprox.x_data, lipAprox.f_x_data, lipAprox.importanceWeights, lipAprox.lipschitzConstants, x1))
     assert (derivative == Interval(-1.0, 1.0) * lipschitz).all(), 'Jacobian for Subtraction between intervals fails : {} , {}\n'.format(derivative, Interval(-1.0, 1.0) *  lipschitz).all()
+

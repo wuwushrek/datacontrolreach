@@ -3,10 +3,11 @@ config.update("jax_enable_x64", True)
 
 import jax
 
-from datacontrolreach import jumpy as jp
 import numpy as np
+import jax.numpy as jnp
+import datacontrolreach.jumpy as jp
 
-from datacontrolreach import interval
+from datacontrolreach import interval as itvl
 from datacontrolreach.interval import Interval as iv
 
 from datacontrolreach import dynsideinfo
@@ -72,25 +73,25 @@ t_end = (n_data_max-1) * sampling_time
 # Build a function to output the corresponding control value at a given time t \in [0, 4]
 # t \in [0, 1.5] corresponds to the trajectory T_15
 @jax.jit
-def uOver(t, pert=iv(jp.array([0.,0.]))):
+def uOver(t, pert=iv(0.)):
     # print(t)
     t  = t if isinstance(t, iv) else iv(t)
-    uval = jp.array([iv(c_vmax), (c_rot * (t-t_end)).cos() * c_wmax])
-    valid_indx = jp.asarray(jp.where(t.lb < t_end+(1.0*sampling_time)-1e-6, t.lb / sampling_time, 0), dtype=int)
-    rcontrol = jp.asarray(rand_control)
+    uval = itvl.block_array([iv(c_vmax), jp.cos(c_rot * (t-t_end))* c_wmax])
+    valid_indx = jnp.asarray(jnp.where(t.lb < t_end+(1.0*sampling_time)-1e-6, t.lb / sampling_time, 0), dtype=int)
+    rcontrol = jnp.asarray(rand_control)
     uval = jp.where(t.lb < t_end+(1.0*sampling_time)-1e-6, iv(rcontrol[valid_indx]), uval+pert)
     return uval
 
 @jax.jit
-def uOverDer(t, pert=iv(jp.array([0.,0.]))):
+def uOverDer(t, pert=iv(0.)):
     t  = t if isinstance(t, iv) else iv(t)
-    uval = jp.array([iv(0.), -c_rot * (c_rot * (t-t_end)).sin() * c_wmax])
-    uval = jp.where(t.lb < t_end+(1.0*sampling_time)-1e-6, jp.zeros_like(uval), uval+pert)
+    uval = itvl.block_array([iv(0.), -c_rot * jp.sin(c_rot * (t-t_end)) * c_wmax])
+    uval = jp.where(t.lb < t_end+(1.0*sampling_time)-1e-6, itvl.zeros_like(uval), uval+pert)
     return uval
 
 
 # Scalar based control signal for ode solving
-_uOver =  lambda t : np.array(uOver(t).lb)
+_uOver =  lambda t : jnp.array(uOver(t).lb)
 
 ############################## System dynamics ###############################3
 # The actual dynamics of the system --> Decomposed in known and unknown terms
@@ -102,8 +103,8 @@ def _known_terms(x, u):
 def _composed_function(knTerm, unkTerm):
     # unkTerm are uncertain values and  knTerm is possibly uncertain
     zl = jp.zeros_like(unkTerm['G11'])
-    G = jp.array([[unkTerm['G11'], zl],[unkTerm['G21'], zl], [zl, unkTerm['G32']] ])
-    f = jp.array([unkTerm['f1'], unkTerm['f2'], unkTerm['f3']])
+    G = jp.block_array([[unkTerm['G11'], zl],[unkTerm['G21'], zl], [zl, unkTerm['G32']] ])
+    f = jp.block_array([unkTerm['f1'], unkTerm['f2'], unkTerm['f3']])
     return f + G @ knTerm['u']
 
 def value_unknown(x):
@@ -113,6 +114,7 @@ def value_unknown(x):
     return {'G11' : jp.cos(x[2]), 'G21' : jp.sin(x[2]), 'G32' : ol, 'f1' : zl, 'f2' : zl, 'f3' : zl}
 
 # The known dynamics of the system
+@jax.jit
 def m_dyn(x,u):
     return _composed_function(_known_terms(x, u), value_unknown(x))
 
@@ -253,7 +255,6 @@ markerTraj = 'bs'
 # plt.tight_layout()
 # plt.show()
 
-
 ######## Build the differential inclusion ##########
 from datacontrolreach.dynsideinfo import DynamicsWithSideInfo, lipinfo_builder, hc4revise_lin_eq
 
@@ -296,11 +297,11 @@ class Unicycle(DynamicsWithSideInfo):
         # First axis constraint -> dot{x}
         res = {}
         uval = kTerms['u']
-        x1_unk = hc4revise_lin_eq(noisyXdot[0], jp.array([1., uval[0]]), jp.array([unkTerms['f1'], unkTerms['G11']]))
+        x1_unk = hc4revise_lin_eq(noisyXdot[0], jp.array([1., uval[0]]), jp.block_array([unkTerms['f1'], unkTerms['G11']]))
         res['f1'], res['G11'] = x1_unk[0], x1_unk[1]
-        x2_unk = hc4revise_lin_eq(noisyXdot[1], jp.array([1., uval[0]]), jp.array([unkTerms['f2'], unkTerms['G21']]))
+        x2_unk = hc4revise_lin_eq(noisyXdot[1], jp.array([1., uval[0]]), jp.block_array([unkTerms['f2'], unkTerms['G21']]))
         res['f2'], res['G21'] = x2_unk[0], x2_unk[1]
-        x3_unk = hc4revise_lin_eq(noisyXdot[2], jp.array([1., uval[1]]), jp.array([unkTerms['f3'], unkTerms['G32']]))
+        x3_unk = hc4revise_lin_eq(noisyXdot[2], jp.array([1., uval[1]]), jp.block_array([unkTerms['f3'], unkTerms['G32']]))
         res['f3'], res['G32'] = x3_unk[0], x3_unk[1]
         return {key : res[key] for key in unkTerms}
 
@@ -319,7 +320,7 @@ sidyn = jax_jit(Unicycle, feas_state_input, lipinfo, xTraj = rand_init_traj_vec,
 #                         fixpointWidenCoeff=0.2, zeroDiameter=1e-5, containTol=1e-2, maxFixpointIter=10)
 
 # Compute the differential inclusion
-diff_inclu, _ = interval.vmap_interval(lambda x, u : dynsideinfo.dynamics(sidyn, x, u))(x_values[:u_values.shape[0]], u_values)
+diff_inclu, _ = jax.vmap(lambda x, u : dynsideinfo.dynamics(sidyn, x, u))(x_values[:u_values.shape[0]], u_values)
 xdot_lb, xdot_ub = diff_inclu.lb, diff_inclu.ub
 # print(res.__dict__)
 
@@ -380,9 +381,10 @@ w_tiling = np.linspace(pert_lb[1], pert_ub[1], nTile)
 
 def trueReachableSet(discreteTime, stateInit):
     """ Compute the true reachable set based on the Subdivion by nTile"""
-    res_lb = jp.zeros((discreteTime.shape[0], stateInit.shape[0]), dtype=float)
-    res_ub = jp.zeros((discreteTime.shape[0], stateInit.shape[0]), dtype=float)
+    res_lb = np.zeros((discreteTime.shape[0], stateInit.shape[0]), dtype=float)
+    res_ub = np.zeros((discreteTime.shape[0], stateInit.shape[0]), dtype=float)
     for i in tqdm(range(nTile)):
+        # @jax.jit
         def uFun(t):
             return uOverPert(t,  pert=iv(jp.array([v_tiling[i], w_tiling[i]]))).lb
         _, traj, trajDot = synthTraj(m_dyn, uFun, stateInit, discreteTime, atol=1e-10, rtol=1e-10)
@@ -396,6 +398,7 @@ def trueReachableSet(discreteTime, stateInit):
     return res_lb, res_ub
 
 reach_lb, reach_ub = trueReachableSet(np.array([ t_end+sampling_time+i*dt_reach for i in range(tValOver.shape[0]-repeat_val*rand_init_input_vec.shape[0])]), rand_init_traj_vec[-1,:])
+exit
 
 _x0 = rand_init_traj_vec[-1,:]
 _t0 = t_end+sampling_time

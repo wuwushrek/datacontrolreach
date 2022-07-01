@@ -12,20 +12,22 @@ class LipschitzApproximator:
     """
     def __init__(self, shapeOfInputs, shapeOfOutputs, lipschitzConstants, boundsOnFunctionValues:Interval = None, importanceWeights = None):
         # check shapes to make sure everything is compatible
-        assert shapeOfOutputs == jp.shape(lipschitzConstants), 'Shape of outputs {} does not match shape of Lipschitz constants {}\n'.format(shapeOfOutputs, jp.shape(lipschitzConstants))
-        assert boundsOnFunctionValues is None or shapeOfOutputs == jp.shape(boundsOnFunctionValues)
-        assert importanceWeights is None or (shapeOfOutputs + shapeOfInputs) == jp.shape(importanceWeights)
 
-        # check data type. Int does not work!!!! (idk why, jax throws errors)
-        assert lipschitzConstants.dtype == np.dtype('float64')
-        assert boundsOnFunctionValues is None or boundsOnFunctionValues.dtype == np.dtype('float64')
-        assert importanceWeights is None or importanceWeights.dtype == np.dtype('float64')
+        assert shapeOfOutputs == lipschitzConstants.shape, 'Shape of outputs {} does not match shape of Lipschitz constants {}\n'.format(shapeOfOutputs, jp.shape(lipschitzConstants))
+        assert boundsOnFunctionValues is None or shapeOfOutputs == boundsOnFunctionValues.shape
+        assert importanceWeights is None or (shapeOfOutputs + shapeOfInputs) == importanceWeights.shape
+
+        # # check data type. Int does not work!!!! (idk why, jax throws errors)
+        # # [NOTE] float32 or float64 ARE float, so will just check if it is a float instead of differentiationg between 32 or 64
+        # assert lipschitzConstants.dtype == float
+        # assert boundsOnFunctionValues is None or boundsOnFunctionValues.dtype == float
+        # assert importanceWeights is None or importanceWeights.dtype == float
 
         self.shapeOfInputs = shapeOfInputs
         self.shapeOfOutputs = shapeOfOutputs
         self.lipschitzConstants = lipschitzConstants
         # Assume some large function bounds if not provided. Do not assume infinity, even though its mathematically better, because it causes NaN
-        self.boundsOnFunctionValues = boundsOnFunctionValues if boundsOnFunctionValues is not None else Interval(jp.full(shapeOfOutputs, -1000000.0), jp.full(shapeOfOutputs, 1000000))
+        self.boundsOnFunctionValues = boundsOnFunctionValues if boundsOnFunctionValues is not None else Interval(jp.full(shapeOfOutputs, -1e6), jp.full(shapeOfOutputs, 1e6))
         self.importanceWeights = importanceWeights if importanceWeights is not None else jp.ones(shapeOfOutputs + shapeOfInputs)
 
         # The first index is the data index. Initially we have no data so it is 0. We will add data to these arrays.
@@ -36,13 +38,13 @@ class LipschitzApproximator:
         return self.approximate(x_to_predict)
 
     def approximate(self, x_to_predict):
-        assert self.shapeOfInputs == jp.shape(x_to_predict), 'x_to_predict size wrong. Expected {} , got {}\n'.format(self.shapeOfInputs, jp.shape(x_to_predict))
-        assert x_to_predict.dtype == np.dtype('float64')
+        assert self.shapeOfInputs == x_to_predict.shape, 'x_to_predict size wrong. Expected {} , got {}\n'.format(self.shapeOfInputs, x_to_predict.shape)
+        # assert x_to_predict.dtype == float
         return f_approximate(self.boundsOnFunctionValues, self.x_data, self.f_x_data, self.importanceWeights, self.lipschitzConstants, x_to_predict)
 
     def add_data(self, x, f_x: Interval):
-        assert jp.shape(x) == self.shapeOfInputs, 'x size wrong. Expected {} , got {}\n'.format(self.shapeOfInputs, jp.shape(x))
-        assert jp.shape(f_x) == self.shapeOfOutputs, 'f_x size wrong. Expected {} , got {}\n'.format(self.shapeOfOutputs, jp.shape(f_x))
+        assert x.shape == self.shapeOfInputs, 'x size wrong. Expected {} , got {}\n'.format(self.shapeOfInputs, x.shape)
+        assert f_x.shape == self.shapeOfOutputs, 'f_x size wrong. Expected {} , got {}\n'.format(self.shapeOfOutputs, f_x.shape)
         self.x_data =     jp.vstack(( self.x_data,     jp.reshape(x,   (1,) + self.shapeOfInputs)))
         self.f_x_data =   jp.vstack(( self.f_x_data,   jp.reshape(f_x, (1,) + self.shapeOfOutputs)))
 
@@ -57,6 +59,7 @@ class LipschitzApproximator:
     #    return cls(*children, **aux_data)
 
 
+#[TODO] Fix This as it should be non-differentiable with respect to the first 4 parameters
 # Note I have to pull this function out of the class because Jax cannot jit or differentiate class methods
 # So we pull the function out, and call it from the class
 @jax.custom_jvp
@@ -65,11 +68,12 @@ def f_approximate(boundsOnFunctionValues, x_data, f_x_data, importanceWeights, l
     f_x_bounds = boundsOnFunctionValues
 
     # for each data point, find bound based on lipschitz constants. Then find intersection
-    for index in range(jp.shape(x_data)[0]):
+
+    for index in range(x_data.shape[0]):
         x = x_data[index]
         f_x = f_x_data[index]
 
-        difference_x = jp.subtract(x, x_to_predict)
+        difference_x = x - x_to_predict
 
         # this process calculates the norm of the difference in X of the data and the X we are trying to predict
         # first we (elementwise) square the distance (norm 2)
@@ -87,12 +91,15 @@ def f_approximate(boundsOnFunctionValues, x_data, f_x_data, importanceWeights, l
         # cone = jp.multiply(Interval(-1.0, 1.0), possible_change_output)
         cone = Interval(-1.0, 1.0) * possible_change_output
 
-        bound = jp.add(f_x, cone)  # add the prediction at this point + the cone generated by X distance * lipschitz to get a bound
+        bound = f_x + cone  # add the prediction at this point + the cone generated by X distance * lipschitz to get a bound
         f_x_bounds = bound & f_x_bounds  # finds the intersection of current bound and bound generated by this datapoint
 
     # after intersecting all bounds, return
     return f_x_bounds
 
+
+#[TODO] Fix This as it should be non-differentiable with respect to the first 4 parameters
+#[TODO] Plus it is wrong, the Lipschitz must be multiplied by the weight to get the actual range
 # We cannot find the derivate at x. However, we do know the Lipschitz constant, so the derivative is between -Lipschitz and +Lipschitz
 # so we can return that
 @f_approximate.defjvp

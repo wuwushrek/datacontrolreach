@@ -1,4 +1,5 @@
 import jax
+import jax.numpy as jnp
 import datacontrolreach.jumpy as jp
 
 from typing import Any, Callable, List, Optional, Sequence, Tuple, TypeVar, Union
@@ -45,7 +46,7 @@ def build_overapprox(dynclass, feas_state_input : Tuple[jp.ndarray, jp.ndarray],
     # If initial data are given apply contraction rules to include them in the dataset
     if xTraj is not None and xDotTraj is not None and uTraj is not None:
         rollout_scan = lambda carry, other : (update_overapprox(carry, *other), None)
-        _dyn, _ = interval.scan_interval(rollout_scan, _dyn, (xTraj[:uTraj.shape[0]], uTraj, xDotTraj))
+        _dyn, _ = jax.lax.scan(rollout_scan, _dyn, (xTraj[:uTraj.shape[0]], uTraj, xDotTraj))
     return _dyn
     
 def update_overapprox(dyn : DynamicsWithSideInfo, xval : jp.ndarray, uval : jp.ndarray, xdotnoise : jp.ndarray):
@@ -89,7 +90,7 @@ def update_overapprox(dyn : DynamicsWithSideInfo, xval : jp.ndarray, uval : jp.n
         return _count, type(dyn)(dyn.unkLipDict, dyn.xTraj, dyn.xDotTraj, m_unkAtXtraj, dyn.contHistory, dyn.dataIndx, dyn.dataNum)
     # res = interval.while_interval(cond_fun, body_fun, (0, dyn))
     # DO the loop to update the remaining point in the data set
-    return interval.while_interval(cond_fun, body_fun, (0, dyn))[1]
+    return jax.lax.while_loop(cond_fun, body_fun, (0, dyn))[1]
     # return res[1]
 
 
@@ -108,7 +109,7 @@ def update_dynexpr(dyn, xval, xdotnoise, kTerms, unkTerms):
 
     # In case this corresponds to a new data point --> Perform adequate updates
     n_data_indx = (dyn.dataIndx + 1) % dyn.xTraj.shape[0]
-    n_data_num = dyn.dataNum + jp.where(jp.logical_and(dyn.dataNum < dyn.xTraj.shape[0], dyn.dataIndx > 0), 1, 0)
+    n_data_num = dyn.dataNum + jnp.where(jnp.logical_and(dyn.dataNum < dyn.xTraj.shape[0], dyn.dataIndx > 0), 1, 0)
     m_xtraj = jp.index_update(dyn.xTraj, dyn.dataIndx, xval)
     m_xdotnoise = jp.index_update(dyn.xDotTraj, dyn.dataIndx, xdotnoise)
     m_contHistory = { key : jp.index_update(dyn.contHistory[key], dyn.dataIndx, v) for key, v in kTerms.items()}
@@ -135,7 +136,7 @@ def apriori_enclosure(dyn, xval, uOver, dt, fixpointWidenCoeff=0.2,
     # Prepare the loop
     def cond_fun(carry):
         isIn, count, _ = carry
-        return jp.logical_and(jp.logical_not(isIn) , count <= maxFixpointIter)
+        return jnp.logical_and(jnp.logical_not(isIn) , count <= maxFixpointIter)
 
     def body_fun(carry):
         _, count, _pastS = carry
@@ -148,7 +149,7 @@ def apriori_enclosure(dyn, xval, uOver, dt, fixpointWidenCoeff=0.2,
         _pastS = jp.where(isIn, _newS, _newS + iv(-radIncr,radIncr))
         return jp.all(isIn), (count+1), _pastS
 
-    _, nbIter, S = interval.while_interval(cond_fun, body_fun, (False, 1, S))
+    _, nbIter, S = jax.lax.while_loop(cond_fun, body_fun, (False, 1, S))
     print('Num Iter ', nbIter)
     fS, _ = dynsideinfo.dynamics(dyn, S, uOver)
     return xval + fS * iv_odt, fx, fS
@@ -215,5 +216,5 @@ def DaTaReach(dyn, x0, t0, nPoint, dt, uOver, uDer,
         return next_x, next_x
 
     # Scan over the operations to obtain the reachable set
-    _, res = interval.scan_interval(op, curr_x, integTime[:-1])
+    _, res = jax.lax.scan(op, curr_x, integTime[:-1])
     return jp.vstack((curr_x,res)), integTime

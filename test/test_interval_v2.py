@@ -2,8 +2,11 @@ from jax.config import config
 config.update("jax_enable_x64", True)
 
 import jax
-import datacontrolreach.jumpy as jp
+import jax.numpy as jnp
+
+import datacontrolreach.interval as itv
 from datacontrolreach.interval import Interval
+
 import mpmath
 from mpmath import iv
 from mpmath import matrix
@@ -594,6 +597,32 @@ def test_jacobian_div(seed):
 	assert compare_intervals(1/interval2, derivative), 'Jacobian for division between scalar and interval fails : {} , {}\n'.format(interval2, derivative)
 
 
+# def test_jacobian_pow(seed):
+# 	np.random.seed(seed)
+# 	# Generate the data for test
+# 	size_arr = np.random.randint(low=1, high=3)
+# 	n_dim = tuple(np.random.randint(low=1, high=21, size=size_arr))
+# 	int_lb_1, int_ub_1 = rd_interval(n_dim)
+# 	int_lb_2, int_ub_2 = rd_interval(n_dim)
+# 	# Build the intervals
+# 	interval1 = Interval(lb=int_lb_1, ub= int_ub_1) + 10.1
+
+# 	tangent0 = Interval( np.full(np.shape(interval1), 0.0), np.full(np.shape(interval1), 0.0))  # is an all 0's matrix
+# 	tangent1 = Interval( np.full(np.shape(interval1), 1.0), np.full(np.shape(interval1), 1.0))  # is an all 1's matrix
+
+# 	# test interval + number
+# 	value, derivative = jax.jvp(Interval.__pow__, (interval1, 2.0), (tangent0, 1.0))
+# 	assert compare_intervals( interval1**2.0 * Interval.log(interval1), derivative), '1. Jacobian for power of interval to scalar fails : {} , {}\n'.format( interval1**2.0 * Interval.log(interval1), derivative)
+
+# 	value, derivative = jax.jvp(Interval.__pow__, (interval1, 2.0), (tangent1, 0.0))
+# 	assert compare_intervals(2.0 * interval1 ** (2.0-1), derivative), '2. Jacobian for power of interval to scalar fails : {} , {}\n'.format(2.0 * interval1 ** (2.0-1), derivative)
+
+# 	value, derivative = jax.jvp(Interval.__pow__, (interval1, 1.5), (tangent0, 1.0))
+# 	assert compare_intervals( interval1**1.5 * Interval.log(interval1), derivative), '3. Jacobian for power of interval to scalar fails : {} , {}\n'.format( interval1**1.5 * Interval.log(interval1), derivative)
+
+# 	value, derivative = jax.jvp(Interval.__pow__, (interval1, 1.5), (tangent1, 0.0))
+# 	assert compare_intervals(1.5 * interval1 ** (1.5-1), derivative), '4. Jacobian for power of interval to scalar fails : {} , {}\n'.format(1.5 * interval1 ** (1.5-1), derivative)
+
 
 def test_jacobian_cos(seed):
 	np.random.seed(seed)
@@ -620,5 +649,5 @@ def test_jacobian_cos(seed):
 
 	# test abs
 	value, derivative = jax.jvp(Interval.__abs__, (interval1,), (tangent1,))
-	solution = jp.where(interval1 > 0, tangent1, jp.where(interval1 < 0, -tangent1, tangent1 * Interval(-1., 1.)))
+	solution = itv.where(interval1 > 0, tangent1, itv.where(interval1 < 0, -tangent1, tangent1 * Interval(-1., 1.)))
 	assert compare_intervals(solution, derivative), 'Jacobian for cos of interval fails: {} , {}\n'.format(solution, derivative)
