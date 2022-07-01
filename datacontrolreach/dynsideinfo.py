@@ -1,10 +1,11 @@
 import jax
+import jax.numpy as jnp
 import datacontrolreach.jumpy as jp
 
 from collections import namedtuple
 from typing import Any, Callable, List, Optional, Sequence, Tuple, TypeVar, Union
 
-from datacontrolreach import interval
+from datacontrolreach import interval as itvl
 from datacontrolreach.interval import Interval as iv
 
 from functools import partial
@@ -37,11 +38,11 @@ def lipinfo_builder(Lip=0.0, vDep=[], weightLip=[], n=0, bound=(-1e5,1e5), gradB
     if weightLip is None or len(weightLip) == 0:
         weightLip = [1.0 for _ in s_vDep]
 
-    assert jp.amin(jp.array(weightLip)) > 0 , 'weightLip must be all positive'
+    assert jnp.amin(jnp.array(weightLip)) > 0 , 'weightLip must be all positive'
     assert len(vDep) == len(weightLip), 'WeightLip must be the same dimension as vDep'
 
     # Weight for the relative importance of each input of the unknown terms
-    weightLip_ = jp.array(weightLip, dtype=float)
+    weightLip_ = jnp.array(weightLip, dtype=float)
 
     # Gradient information
     lipIndex = { i : Lip*w for i,w in zip(s_vDep, weightLip)} # Gradient is bounded by Lipschitz * relative importance
@@ -56,11 +57,11 @@ def lipinfo_builder(Lip=0.0, vDep=[], weightLip=[], n=0, bound=(-1e5,1e5), gradB
             assert lb <= ub, 'Gradient bound are not sound L={}, i={}, vDep={}, weightLip={}, lb= {}, ub = {}'.format(Lip, i, vDep, weightLip_, lb, ub)
 
     return LipInfo(L=float(Lip), vDep=vDep, weightLip=weightLip_, bound=iv(lb=float(bound[0]), ub=float(bound[1])), 
-                    gradBound=iv(lb=jp.array([l for (l,u) in gradBound], dtype=float), ub=jp.array([u for (l,u) in gradBound], dtype=float))
+                    gradBound=iv(lb=jnp.array([l for (l,u) in gradBound], dtype=float), ub=jnp.array([u for (l,u) in gradBound], dtype=float))
                   )
 
 
-@jp.tree_util.register_pytree_node_class
+@jax.tree_util.register_pytree_node_class
 class DynamicsWithSideInfo:
     """ Define a class representing the dynamics of an unknown system and several 
         a priori side information about the dynamics in terms of compositional function 
@@ -74,7 +75,7 @@ class DynamicsWithSideInfo:
         """
         self.unkLipDict = unkLipDict
 
-        assert jp._is_array(xTraj) and xTraj.ndim == 2, 'Trajectory should be a 2D array'
+        assert hasattr(xTraj, 'shape') and xTraj.ndim == 2, 'Trajectory should be a 2D array'
         self.xTraj = xTraj
 
         # Uncertain xDot measurement (include noise bound)
@@ -92,8 +93,8 @@ class DynamicsWithSideInfo:
 
         # Save the current number of data and data indx of the latest added data
         # This simulate a circular array
-        self.dataIndx = jp.array(dataIndx, dtype=int)
-        self.dataNum = jp.array(dataNum, dtype=int)
+        self.dataIndx = jnp.array(dataIndx, dtype=int)
+        self.dataNum = jnp.array(dataNum, dtype=int)
 
     def __repr__(self):
         m_str = '=====================================================\n'
@@ -283,6 +284,7 @@ def lipoverapprox(x : jp.ndarray, xTraj : jp.ndarray, fover: jp.ndarray, lipinfo
     else:
         midx = x[lipinfo.vDep].mid if isinstance(x, iv) else x[lipinfo.vDep]
         depXtraj = xTraj[:,lipinfo.vDep]
+        # Use jp here to account for the fact that it can be an interval
         indxClosest = jp.argmin(jp.norm( (midx - depXtraj) * lipinfo.weightLip, axis=1))
         closestx, foverClosestx = depXtraj[indxClosest], fover[indxClosest]
     # DO the intersection with the a priori bound on the range of the function
@@ -300,7 +302,7 @@ def hc4revise_lin_eq(rhs : jp.ndarray, coeffs : jp.ndarray, unk : iv):
     """
     # Save temporary higher order sums
     _S = unk * coeffs
-    _S_lb, _S_ub = jp.cumsum(_S.lb[::-1]), jp.cumsum(_S.ub[::-1])
+    _S_lb, _S_ub = jnp.cumsum(_S.lb[::-1]), jnp.cumsum(_S.ub[::-1])
     _S = iv(lb=_S_lb, ub=_S_ub)
     Csum = _S[-1] & rhs # The sum and the rhs are equals
 
@@ -309,13 +311,13 @@ def hc4revise_lin_eq(rhs : jp.ndarray, coeffs : jp.ndarray, unk : iv):
         _unk, _c, _csum = extra
         # Trick to avoid division by 0
         zero_notin_c = jp.logical_or(_c > 0, _c < 0)
-        _ct = jp.where(zero_notin_c, _c, 1.)
+        _ct = jp.where(zero_notin_c, _c, 1. if not isinstance(coeffs, iv) else iv(1.))
         Cunk = jp.where(zero_notin_c, ((carry - _csum) & (_c * _unk))/_ct, _unk)
         # Use the newly Cunk to provide a contraction of the remaining sum
         carry = (carry - (Cunk * _c)) & _csum
         return carry, Cunk
 
-    _, cunk = interval.scan_interval(op, Csum, (unk, coeffs, interval.concatenate((_S[::-1], iv(0.)))[1:]) )
+    _, cunk = jax.lax.scan(op, Csum, (unk, coeffs, itvl.concatenate((_S[::-1], iv(0.)))[1:]) )
     return cunk
 
 def hc4revise_lin_leq(rhs : Union[jp.ndarray, iv], coeffs : jp.ndarray, unk : iv):
@@ -327,7 +329,7 @@ def hc4revise_lin_leq(rhs : Union[jp.ndarray, iv], coeffs : jp.ndarray, unk : iv
     """
     # Save temporary higher order sums
     _S = unk * coeffs
-    _S_lb, _S_ub = jp.cumsum(_S.lb[::-1]), jp.cumsum(_S.ub[::-1])
+    _S_lb, _S_ub = jnp.cumsum(_S.lb[::-1]), jnp.cumsum(_S.ub[::-1])
     _S = iv(lb=_S_lb, ub=_S_ub)
     Csum = _S[-1] & iv(lb=-jp.inf, ub=rhs.lb if isinstance(rhs, iv) else rhs) # The sum and the rhs are equals
 
@@ -336,13 +338,13 @@ def hc4revise_lin_leq(rhs : Union[jp.ndarray, iv], coeffs : jp.ndarray, unk : iv
         _unk, _c, _csum = extra
         # Trick to avoid division by 0
         zero_notin_c = jp.logical_or(_c > 0, _c < 0)
-        _ct = jp.where(zero_notin_c, _c, 1.)
+        _ct = jp.where(zero_notin_c, _c, 1. if not isinstance(coeffs, iv) else iv(1.))
         Cunk = jp.where(zero_notin_c, ((carry - _csum) & (_c * _unk))/_ct, _unk)
         # Use the newly Cunk to provide a contraction of the remaining sum
         carry = (carry - (Cunk * _c)) & _csum
         return carry, Cunk
 
-    _, cunk = interval.scan_interval(op, Csum, (unk, coeffs, interval.concatenate((_S[::-1], iv(0.)))[1:]) )
+    _, cunk = jax.scan(op, Csum, (unk, coeffs, itvl.concatenate((_S[::-1], iv(0.)))[1:]) )
     return cunk
 
 def hc4revise_lin_geq(rhs : Union[jp.ndarray, iv], coeffs : jp.ndarray, unk : iv):
@@ -354,7 +356,7 @@ def hc4revise_lin_geq(rhs : Union[jp.ndarray, iv], coeffs : jp.ndarray, unk : iv
     """
     # Save temporary higher order sums
     _S = unk * coeffs
-    _S_lb, _S_ub = jp.cumsum(_S.lb[::-1]), jp.cumsum(_S.ub[::-1])
+    _S_lb, _S_ub = jnp.cumsum(_S.lb[::-1]), jnp.cumsum(_S.ub[::-1])
     _S = iv(lb=_S_lb, ub=_S_ub)
     Csum = _S[-1] & iv(lb=rhs.ub if isinstance(rhs, iv) else rhs, ub=jp.inf) # The sum and the rhs are equals
 
@@ -363,28 +365,28 @@ def hc4revise_lin_geq(rhs : Union[jp.ndarray, iv], coeffs : jp.ndarray, unk : iv
         _unk, _c, _csum = extra
         # Trick to avoid division by 0
         zero_notin_c = jp.logical_or(_c > 0, _c < 0)
-        _ct = jp.where(zero_notin_c, _c, 1.)
+        _ct = jp.where(zero_notin_c, _c, 1. if not isinstance(coeffs, iv) else iv(1.))
         Cunk = jp.where(zero_notin_c, ((carry - _csum) & (_c * _unk))/_ct, _unk)
         # Use the newly Cunk to provide a contraction of the remaining sum
         carry = (carry - (Cunk * _c)) & _csum
         return carry, Cunk
 
-    _, cunk = interval.scan_interval(op, Csum, (unk, coeffs, interval.concatenate((_S[::-1], iv(0.)))[1:]) )
+    _, cunk = jax.scan(op, Csum, (unk, coeffs, itvl.concatenate((_S[::-1], iv(0.)))[1:]) )
     return cunk
 
 
 
-# rhs = jp.array(0.0)
-# coeffs = jp.array([1.0, 1.0, 0.1])
-# unk = iv(lb=jp.array([-0.01, -0.05, -0.1]), ub=jp.array([1.0, 0.05, 1.]))
+# rhs = jnp.array(0.0)
+# coeffs = jnp.array([1.0, 1.0, 0.1])
+# unk = iv(lb=jnp.array([-0.01, -0.05, -0.1]), ub=jnp.array([1.0, 0.05, 1.]))
 
 # print(jax.jit(hc4revise_lin_eq)(rhs, coeffs, unk))
 # print(hc4revise_lin_eq(rhs, coeffs, unk))
 
 # dictUnk = {'f1' : lipinfo_builder(Lip=1.0, vDep=[0,1], weightLip=[1.0,0.1], n=3, bound=(-1e5,1e5), gradBound=None)}
-# xTraj = jp.array([[1.0, 2.0, 3.0]])
-# xDotTraj = iv(lb = jp.array([[1.0, 2.0, 3.0]]), ub=jp.array([[1.0, 2.0, 3.0]]))
-# unkAtXtraj = {'f1' : iv(lb = jp.array([[1.0, 2.0, 3.0]]), ub=jp.array([[1.0, 2.0, 3.0]]))}
+# xTraj = jnp.array([[1.0, 2.0, 3.0]])
+# xDotTraj = iv(lb = jnp.array([[1.0, 2.0, 3.0]]), ub=jnp.array([[1.0, 2.0, 3.0]]))
+# unkAtXtraj = {'f1' : iv(lb = jnp.array([[1.0, 2.0, 3.0]]), ub=jnp.array([[1.0, 2.0, 3.0]]))}
 
 # x = jax.numpy.array([1,2,3])
 # def testf (x, dyn):
