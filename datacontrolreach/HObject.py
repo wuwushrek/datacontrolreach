@@ -37,7 +37,11 @@ class HObject:
 
 
     def contract(self, x, u, x_dot):
+        print("X = ", x)
+        print("u = ", u)
+        print("X_dot = ", x_dot)
         for index in range(len(self.contractions)):
+
             contracted_value = self.contractions[index](x,u,x_dot, self.known_functions, self.unknown_approximations)
             self.unknown_approximations[index].add_data(x, contracted_value)
 
@@ -53,9 +57,15 @@ class HObject:
 # than a pseudo-inverse.
 # Given values for A, C and an estimate for B, we can contract the approximation for B
 def inverse_contraction_B(A, B_approx:Interval, C):
+    print("A = ", A)
+    print("B_approx = ", B_approx)
+    print("C = ", C)
     carry = (A, C, 0) # third one is index
 
     def row_wise(carry, x):
+        print("carry[0][carry[2]]", type(carry[0][carry[2]]))
+        print("x", type(x))
+        print("carry[1]", type(carry[1]))
         y = contract_row_wise(carry[0][carry[2]], x, carry[1])
         return (carry[0], carry[1], carry[2] + 1), y
     carry, ys = jax.lax.scan(row_wise, carry, B_approx)
@@ -89,6 +99,7 @@ def contract_row_wise(A, B_approx: Interval, C):
     if len(jp.shape(C)) > 1:
         C = jp.reshape(C, jp.shape(C)[0])
     # C = Interval(C)
+    # A = A.lb
     print("A = ", type(A), jp.shape(A))
     print("B_approx = ", type(B_approx), jp.shape(B_approx))
     print("C = ", type(C), jp.shape(C))

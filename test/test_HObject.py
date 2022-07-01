@@ -65,7 +65,13 @@ def test_contract_row_wise(seed):
     assert (answer == new_approx).all(), '6. row wise contraction fails : {} , {}\n'.format(answer, new_approx)
     assert (hc4revise_lin_eq(x, u, g) == new_approx).all(), '6. row wise contraction fails : {} , {}\n'.format(hc4revise_lin_eq(x, u, g), new_approx)
 
-
+    x = Interval(3.0, 5.0)
+    u = jp.array([1.0, 2.0, 0.0])
+    g = Interval(jp.array([0.0, 0.0, 0.0]), jp.array([1.0, 1.0, 1.0]))
+    new_approx = contract_row_wise(x, g, u)
+    answer = Interval(jp.array([1.0, 1.0, 0.0]), jp.array([1.0, 1.0, 1.0]))
+    assert (answer == new_approx).all(), '7. row wise contraction fails : {} , {}\n'.format(answer, new_approx)
+    assert (hc4revise_lin_eq(x, u, g) == new_approx).all(), '7. row wise contraction fails : {} , {}\n'.format(hc4revise_lin_eq(x, u, g), new_approx)
 
 def test_contract_C(seed):
 
