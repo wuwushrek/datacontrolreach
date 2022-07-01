@@ -288,7 +288,7 @@ def test_H_object4(seed):
     ]
     contractions = [
         lambda x, u, xdot, known, unknown: xdot - known[0](x,u) - jp.matmul((unknown[1](x) + known[1](x)), u),  # F(X) = xdot - G(X) * U
-    ]  # TODO
+    ]  # TODO  -> Current test fail hereee
 
     h_obj = HObject(shape_x, shape_u, known_functions, unknown_approximators, H, contractions)
 

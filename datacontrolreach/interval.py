@@ -27,8 +27,8 @@ class Interval:
             self._ub = lb.ub
         else:
             # TODO : Do not copy ndarray here, use the correct value
-            self._lb = jnp.array(lb)
-            self._ub = jnp.array(ub) if ub is not None else jnp.array(lb) # No need for deep copy as it is done by jnp and the constructor is pure
+            self._lb = jnp.array(lb, dtype=float)
+            self._ub = jnp.array(ub, dtype=float) if ub is not None else jnp.array(lb, dtype=float) # No need for deep copy as it is done by jnp and the constructor is pure
 
         assert jnp.shape(self._ub) == jnp.shape(self._lb) # make sure dims are the same!
 
@@ -370,7 +370,7 @@ index_update = lambda x, idx, y : Interval(lb=x.lb.at[idx].set(y.lb if isinstanc
                                             ub=x.ub.at[idx].set(y.ub if isinstance(y,Interval) else y))
 mean = lambda a, axis : a.mean(axis)
 dot = lambda x, y : x @ y
-matmul = lambda x1, x2 : x1 @ x2
+matmul = lambda x1, x2 : Interval(x1) @ Interval(x2) # Maybe turn back --> I hate converting all time
 square = lambda x : x**2
 sin = lambda x : x.sin()
 cos = lambda x : x.cos()

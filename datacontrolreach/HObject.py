@@ -5,6 +5,7 @@ from datacontrolreach import interval
 from datacontrolreach.interval import Interval
 from datacontrolreach.LipschitzApproximator import LipschitzApproximator
 import jax
+import jax.numpy as jnp
 import jax.experimental.host_callback
 import random
 from functools import partial
@@ -31,8 +32,8 @@ class HObject:
     # this functions needs to be overwritten by the end user. It needs to return an X dot from X and U by using the known functions
     # and unknown approximations
     def get_x_dot(self, x, u):
-        assert jp.shape(x) == self.shape_x
-        assert jp.shape(u) == self.shape_u
+        assert x.shape == self.shape_x
+        assert u.shape == self.shape_u
         return self.H(x,u, self.known_functions, self.unknown_approximations)
 
 
@@ -47,18 +48,27 @@ class HObject:
 
 
 
-# Assume we have A = B * C
-# We are trying to calculate A * C^-1 = B, which is a contraction for B
-# Normal pseudo-inverse operation is not sufficient. The current estimate of B allows us to be more precise
-# than a pseudo-inverse.
-# Given values for A, C and an estimate for B, we can contract the approximation for B
-def inverse_contraction_B(A, B_approx:Interval, C):
-    carry = (A, C, 0) # third one is index
+# # Assume we have A = B * C
+# # We are trying to calculate A * C^-1 = B, which is a contraction for B
+# # Normal pseudo-inverse operation is not sufficient. The current estimate of B allows us to be more precise
+# # than a pseudo-inverse.
+# # Given values for A, C and an estimate for B, we can contract the approximation for B
+# def inverse_contraction_B(A, B_approx:Interval, C):
+#     carry = (A, C, 0) # third one is index
 
+#     def row_wise(carry, x):
+#         y = contract_row_wise(carry[0][carry[2]], x, carry[1])
+#         return (carry[0], carry[1], carry[2] + 1), y
+#     carry, ys = jax.lax.scan(row_wise, carry, B_approx)
+#     return ys
+
+# A clean scan -> No need to count the index or access by index (that's the whole point of scan)
+def inverse_contraction_B(A, B_approx:Interval, C):
     def row_wise(carry, x):
-        y = contract_row_wise(carry[0][carry[2]], x, carry[1])
-        return (carry[0], carry[1], carry[2] + 1), y
-    carry, ys = jax.lax.scan(row_wise, carry, B_approx)
+        a, bapprx = x
+        y = contract_row_wise(a, bapprx, C)
+        return None, y
+    _, ys = jax.lax.scan(row_wise, None, (A, B_approx))
     return ys
 
 # Assume we have A = B * C
@@ -82,16 +92,19 @@ def inverse_contraction_C(A, B, C_approx:Interval):
 # simply swap the order of the arguments
 # Returns a contracted vector of intervals
 def contract_row_wise(A, B_approx: Interval, C):
-    if len(jp.shape(A)) > 0:
+    # [TODO] Redesign so that the inputs have the right shape without needing to constantly squeezing
+    # Probably stop using (1,m) bt stay with (m,)
+    if hasattr(A, 'shape') and A.ndim > 0: # Some of your example has float as input so jp.shape failts
         A = A[0]
-    if len(jp.shape(B_approx)) > 1:
-        B_approx = jp.reshape(B_approx, jp.shape(B_approx)[0])
-    if len(jp.shape(C)) > 1:
-        C = jp.reshape(C, jp.shape(C)[0])
-    # C = Interval(C)
-    print("A = ", type(A), jp.shape(A))
-    print("B_approx = ", type(B_approx), jp.shape(B_approx))
-    print("C = ", type(C), jp.shape(C))
+    if hasattr(B_approx, 'shape') and B_approx.ndim > 1:
+        B_approx = jp.reshape(B_approx, B_approx.shape[0])
+    if hasattr(C, 'shape') and C.ndim > 1:
+        C = jp.reshape(C, C.shape[0])
+    # Should definitely remove all the tests above
+    # C = Interval(C) # This is not needed anymore
+    print("A = ", type(A), A.shape if hasattr(A, 'shape') else ())
+    print("B_approx = ", type(B_approx), B_approx.shape)
+    print("C = ", type(C), C.shape)
     return hc4revise_lin_eq(A, C, B_approx)
 
 
@@ -105,7 +118,7 @@ def hc4revise_lin_eq(rhs : jp.ndarray, coeffs : jp.ndarray, unk : Interval):
     """
     # Save temporary higher order sums
     _S = unk * coeffs
-    _S_lb, _S_ub = jp.cumsum(_S.lb[::-1]), jp.cumsum(_S.ub[::-1])
+    _S_lb, _S_ub = jnp.cumsum(_S.lb[::-1]), jnp.cumsum(_S.ub[::-1])
     _S = Interval(lb=_S_lb, ub=_S_ub)
     Csum = _S[-1] & rhs # The sum and the rhs are equals
 
@@ -114,13 +127,13 @@ def hc4revise_lin_eq(rhs : jp.ndarray, coeffs : jp.ndarray, unk : Interval):
         _unk, _c, _csum = extra
         # Trick to avoid division by 0
         zero_notin_c = jp.logical_or(_c > 0, _c < 0)
-        _ct = jp.where(zero_notin_c, _c, 1.)
+        _ct = jp.where(zero_notin_c, _c, 1. if not isinstance(coeffs, Interval) else Interval(1.))
         Cunk = jp.where(zero_notin_c, ((carry - _csum) & (_c * _unk))/_ct, _unk)
         # Use the newly Cunk to provide a contraction of the remaining sum
         carry = (carry - (Cunk * _c)) & _csum
         return carry, Cunk
 
-    _, cunk = interval.scan_interval(op, Csum, (unk, coeffs, interval.concatenate((_S[::-1], Interval(0.)))[1:]) )
+    _, cunk = jax.lax.scan(op, Csum, (unk, coeffs, jp.concatenate((_S[::-1], Interval(0.)))[1:]) )
     return cunk
 
 
