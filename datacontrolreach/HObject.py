@@ -65,9 +65,9 @@ class HObject:
 
 # A clean scan -> No need to count the index or access by index (that's the whole point of scan)
 def inverse_contraction_B(A, B_approx:Interval, C):
-    assert A.ndim == 1, 'A must be a vector, IE of size (N,)'
-    assert B_approx.ndim == 2, 'B must be a Matrix, IE of size (N,M)'
-    assert C.ndim == 1, 'C must be a vector, IE of size (M,)'
+    assert A.ndim == 1, 'A must be a vector, IE of size (N,). Got {}'.format(A.ndim)
+    assert B_approx.ndim == 2, 'B must be a Matrix, IE of size (N,M). Got {}'.format(B_approx.ndim)
+    assert C.ndim == 1, 'C must be a vector, IE of size (M,). Got {}'.format(C.ndim)
 
     def row_wise(carry, x):
         a, bapprx = x

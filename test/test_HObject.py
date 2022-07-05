@@ -108,36 +108,36 @@ def test_contract_C(seed):
 def test_contract_B(seed):
 
     # Generate the data for test
-    A = jp.array([[1],[2],[3]]) # 3x1
+    A = jp.array([1,2,3]) # 3x
     B = Interval(jp.array([[-10.0, -10.0], [-10.0, -10.0], [-10.0, -10.0]]),
                 jp.array([[10.0, 10.0], [10.0, 10.0], [10.0, 10.0]]))           # 3x2
-    C = jp.ones((2,1))# 2x1
+    C = jp.ones((2,))# 2x
     new_b = inverse_contraction_B(A, B, C)
     expected = Interval(jp.array([[-9.0, -9.0],[-8.0, -8.0],[-7.0, -7.0] ]),
                         jp.array([[10.0, 10.0],[10.0, 10.0],[10.0, 10.0] ]))
     assert (new_b == expected).all(), '1. B contraction fails : {} , {}\n'.format(new_b, expected)
 
-    A = jp.array([[1],[2],[3]]) # 3x1
+    A = jp.array([1,2,3]) # 3x1
     B = Interval(jp.array([[-10.0, -10.0], [-10.0, -10.0], [-10.0, -10.0]]),
                 jp.array([[10.0, 10.0], [10.0, 10.0], [10.0, 10.0]]))           # 3x2
-    C = jp.zeros((2,1))# 2x1
+    C = jp.zeros((2,))# 2x1
     new_b = inverse_contraction_B(A, B, C)
     expected = Interval(jp.array([[-10.0, -10.0],[-10.0, -10.0],[-10.0, -10.0] ]),
                         jp.array([[10.0, 10.0],[10.0, 10.0],[10.0, 10.0] ]))
     assert (new_b == expected).all(), '2. B contraction fails : {} , {}\n'.format(new_b, expected)
 
-    A = jp.array([[1]]) # 1x1
+    A = jp.array([1]) # 1x
     B = Interval(jp.array([[-10.0, -10.0]]),
                 jp.array([[10.0, 10.0]]))           # 1x2
-    C = jp.zeros((2,1))# 2x1
+    C = jp.zeros((2,))# 2x
     new_b = inverse_contraction_B(A, B, C)
     expected = Interval(jp.array([[-10.0, -10.0]]), jp.array([[10.0, 10.0]]))
     assert (new_b == expected).all(), '2. B contraction fails : {} , {}\n'.format(new_b, expected)
 
-    A = jp.array([[1]]) # 1x1
+    A = jp.array([1]) # 1x1
     B = Interval(jp.array([[-10.0, -10.0]]),
                 jp.array([[10.0, 10.0]]))           # 1x2
-    C = jp.ones((2,1))# 2x1
+    C = jp.ones((2,))# 2x1
     new_b = inverse_contraction_B(A, B, C)
     expected = Interval(jp.array([[-9.0, -9.0]]), jp.array([[10.0, 10.0]]))
     assert (new_b == expected).all(), '2. B contraction fails : {} , {}\n'.format(new_b, expected)
@@ -306,14 +306,55 @@ def test_H_object4(seed):
 
     x_dot = jp.array([10.0, 30.0, 45.0]) # lets say we sample this x dot at the above x,u
     h_obj.contract(x,u, x_dot)
-    expected_x_dot = Interval(x_dot)
+    expected_x_dot = Interval(jp.array([-3999999.0000000,-3999999.0000000,-3999999.0000000,]), jp.array([4000001.0000000, 4000001.0000000, 4000001.0000000]))
     result = h_obj.get_x_dot(x, u)
     assert (expected_x_dot == result).all(), '2.H object prediction error. Expected {} , got {}\n'.format(expected_x_dot, result)
 
+    # fails to contract because our unknown terms were all nonzero, so we cannot contract any one individually
     x = jp.array([2.0, 3.0, 4.0])
-    expected_x_dot = Interval(jp.array([10.0 - math.sqrt(3.0) * 10, 30 - math.sqrt(3.0) * 5, 45 - math.sqrt(3) * 3]),
-                              jp.array([10.0 + math.sqrt(3.0) * 10, 30 + math.sqrt(3.0) * 5, 45 + math.sqrt(3) * 3]))
+    expected_x_dot = Interval(jp.array([-3999999.0000000,-3999999.0000000,-3999999.0000000,]), jp.array([4000001.0000000, 4000001.0000000, 4000001.0000000]))
     result = h_obj.get_x_dot(x, u)
     assert (expected_x_dot == result).all(), '3.H object prediction error. Expected {} , got {}\n'.format(expected_x_dot, result)
 
-test_H_object4(1)
+
+def test_H_object5(seed):
+    # This is the test case where H = Known1(x,u) + known2(x,u) * unknown(x)
+    shape_x = (3,)  # = N
+    shape_u = (2,)  # = M
+    k = shape_x[0] + shape_u[0] # k unknown terms
+
+    known_functions = [lambda x, u: jp.zeros(shape_x),
+                       lambda x, u: jp.vstack(( jp.concatenate((x, u)),
+                                               jp.concatenate((x, u)),
+                                               jp.concatenate((x, u)))),
+                       ]
+
+    H = lambda x, u, known, unknown: known[0](x,u) + jp.matmul(known[1](x,u), unknown[0](x))  # given that known[0] is zeros,
+                                                                                              # And known[1] is x x x u u
+                                                                                                              # x x x u u
+                                                                                                              # x x x u u
+                                                                                            # This form is equilvalent to F + GU
+                                                                                            # where f = x x x...
+                                                                                            # and G = u u
+    unknown_approximators = [
+        LipschitzApproximator(shape_x, (k,), jp.ones((k,)), # lipschitz is all 1's
+                                boundsOnFunctionValues = Interval(jp.ones((k,)) * -100.0, jp.ones((k,)) * 100.0, )), # BOUND IS -100 TO 100
+    ]
+    contractions = [
+        lambda x, u, xdot, known, unknown: inverse_contraction_C(xdot - known[0](x,u), known[1](x, u), unknown[0](x))
+
+    ]
+
+    h_obj = HObject(shape_x, shape_u, known_functions, unknown_approximators, H, contractions)
+
+    x = jp.array([1.0, 2.0, 3.0])
+    u = jp.array([0.0, 0.0])
+    expected_x_dot = known_functions[0](x,u) + jp.matmul(known_functions[1](x,u), unknown_approximators[0](x))
+    result = h_obj.get_x_dot(x, u)
+    assert (expected_x_dot == result).all(), '1.H object prediction error. Expected {} , got {}\n'.format(expected_x_dot, result)
+
+    x_dot = jp.array([10.0, 30.0, 45.0]) # lets say we sample this x dot at the above x,u
+    h_obj.contract(x,u, x_dot)
+    expected_x_dot = Interval(jp.array([-555.0000000,-555.0000000,-555.0000000,]), jp.array([600.0000000, 600.0000000, 600.0000000]))
+    result = h_obj.get_x_dot(x, u)
+    assert (expected_x_dot == result).all(), '2.H object prediction error. Expected {} , got {}\n'.format(expected_x_dot, result)
