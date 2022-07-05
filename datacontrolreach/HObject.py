@@ -6,7 +6,6 @@ from datacontrolreach.interval import Interval
 from datacontrolreach.LipschitzApproximator import LipschitzApproximator
 import jax
 import jax.numpy as jnp
-import jax.experimental.host_callback
 import random
 from functools import partial
 from jax import jit
@@ -69,11 +68,11 @@ def inverse_contraction_B(A, B_approx:Interval, C):
     assert B_approx.ndim == 2, 'B must be a Matrix, IE of size (N,M). Got {}'.format(B_approx.ndim)
     assert C.ndim == 1, 'C must be a vector, IE of size (M,). Got {}'.format(C.ndim)
 
-    def row_wise(carry, x):
+    def row_wise(x):
         a, bapprx = x
         y = contract_row_wise(a, bapprx, C)
-        return None, y
-    _, ys = jax.lax.scan(row_wise, None, (A, B_approx))
+        return y
+    ys = jax.vmap(row_wise)((A, B_approx))
     return ys
 
 # Assume we have A = B * C
