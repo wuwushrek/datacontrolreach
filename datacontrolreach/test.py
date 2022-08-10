@@ -44,10 +44,12 @@ h = HObject( env.observation_space.shape, env.action_space.shape, known_function
 
 # define the cost function, which we will try to minimize
 def cost_function (x, u, x_future):
-    return jp.sqrt(x[0].mid * x[0].mid + x[1].mid * x[1].mid) # x^2 + y^2, minimal = go to 0,0
+    cost =  jp.sqrt(x_future[0] ** 2 + x_future[1] ** 2) # x^2 + y^2, minimal = go to 0,0
+    return cost.ub
+
 
 # create agent with any side info we may need
-agent = DifferentialInclusionAgent(env.observation_space, env.action_space, h, env.dt, cost_function, look_ahead_steps=10, descent_steps=10, learning_rate=0.01)
+agent = DifferentialInclusionAgent(env.observation_space, env.action_space, h, env.dt, cost_function, look_ahead_steps=10, descent_steps=10, learning_rate=0.001)
 
 # reset env, begin looping
 observation, info = env.reset(seed=10, return_info=True)
@@ -66,11 +68,17 @@ for _ in range(1000):
     agent.update(observation, action, observation_dot)
 
     # for our sake
-    env.render(predictions=future_states, sleep=0.01)
+    # env.render(predictions=future_states, sleep=0.01)
     # env.plot(states)
 
     # continue to next state
     observation = new_observation
+
+    #if _ >= 3:
+    #    print(agent.hobject.get_x_dot(observation, jp.array([0, 0])))
+    #    print(agent.hobject.get_x_dot(observation, jp.array([1, 0])))
+    #    print(agent.hobject.get_x_dot(observation, jp.array([1, 1])))
+    #    erro
 
 
 env.close()

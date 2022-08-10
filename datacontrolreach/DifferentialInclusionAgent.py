@@ -6,7 +6,7 @@ from datacontrolreach.HObject import HObject
 import jax
 import random
 import jax.numpy as jnp
-
+import timeit
 
 class DifferentialInclusionAgent:
     """ A class to approximate a function given Lipschitz constants for each dimension and data in the form x, Interval of F(x)
@@ -65,7 +65,7 @@ class DifferentialInclusionAgent:
             return ret
 
     def control_theory(self, state):
-        actions, states = pick_actions(state, self.look_ahead_steps, self.number_actions, self.hobject, self.dt, self.cost_function, self.descent_steps, self.learning_rate)
+        actions, states = pick_actions(state, self.look_ahead_steps, self.number_actions, self.hobject, self.dt, self.cost_function, self.descent_steps, self.learning_rate, self.action_space)
         self.states_future = states
         self.actions_future = actions
         return actions[0, :]
@@ -152,7 +152,6 @@ def DaTaReach(hobject, x0, dt, actions,
         ut = actions[index, :]
         ut_dt = actions[index, :]
 
-
         # Compute the remainder term given the dynamics evaluation at t
         St, _, fst_utdt = apriori_enclosure(hobject, xt, ut_dt, dt,
             fixpointWidenCoeff, zeroDiameter, containTol, maxFixpointIter)
@@ -178,7 +177,7 @@ def predict_n_states(initial_state, actions, hobject, dt):
         return states
 
 # todo make into jittable loop
-def compute_trajectory_cost(states, actions, cost_function):
+def compute_trajectory_cost(actions, states, cost_function):
     # Carry is initially 0. Is incredemented by the cost for each state, action, next_state pair
     def f(carry, x):
         carry += cost_function(states[x, :], actions[x, :], states[x, :])
@@ -186,24 +185,33 @@ def compute_trajectory_cost(states, actions, cost_function):
     carry, _ = jax.lax.scan(f, 0, jp.array(range(jp.shape(actions)[0])))
     return carry
 
-def pick_actions(initial_state, look_ahead_steps, action_dims, hobject, dt, cost_function, descent_steps, learning_rate):
+def predict_n_cost(actions, initial_state, hobject, dt, cost_function):
+    states = predict_n_states(initial_state, actions, hobject, dt)
+    costs = compute_trajectory_cost(actions, states, cost_function)
+    return costs
+
+
+def pick_actions(initial_state, look_ahead_steps, action_dims, hobject, dt, cost_function, descent_steps, learning_rate, action_bounds):
     # init random? actions
     actions = jp.zeros((look_ahead_steps, action_dims))
     states = None
 
     # optimize via a loop of some kind. This one is vanilla gradient descent
     for i in range(descent_steps):
+
+
+        derivative_cost_wrt_actions = jax.jacfwd(predict_n_cost)(actions, initial_state, hobject, dt, cost_function)
+
+        # print(derivative_cost_wrt_actions[0, :])
+        # print(actions[0, :])
         states = predict_n_states(initial_state, actions, hobject, dt)
-        print("States ", states)
-        total_cost = compute_trajectory_cost(states, actions, cost_function)
-        print("Cost ", total_cost)
-
-        derivative_cost_wrt_actions = 0 # something?? # todo
-
-        print("Descending ", i)
+        print(states)
 
         # descent
         actions -= derivative_cost_wrt_actions * learning_rate
+
+        # move back into bounds if needed
+        actions = jp.minimum(jp.maximum(actions, action_bounds.low), action_bounds.high)
 
 
     return actions, states
