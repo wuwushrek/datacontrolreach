@@ -14,8 +14,8 @@ class LipschitzApproximator:
         # check shapes to make sure everything is compatible
 
         assert shapeOfOutputs == lipschitzConstants.shape, 'Shape of outputs {} does not match shape of Lipschitz constants {}\n'.format(shapeOfOutputs, jp.shape(lipschitzConstants))
-        assert boundsOnFunctionValues is None or shapeOfOutputs == boundsOnFunctionValues.shape
-        assert importanceWeights is None or (shapeOfOutputs + shapeOfInputs) == importanceWeights.shape
+        assert boundsOnFunctionValues is None or shapeOfOutputs == boundsOnFunctionValues.shape, 'Bounds on function values must match the output shape. Got {} shape for bounds, {} for outputs'.format(boundsOnFunctionValues.shape, shapeOfOutputs)
+        assert importanceWeights is None or (shapeOfOutputs + shapeOfInputs) == importanceWeights.shape, 'Importance weights shape must be MxN, where is M is the output shape and N is the input shape. Got {} for shape, expected {}'.format(importanceWeights.shape, (shapeOfOutputs + shapeOfInputs))
 
         # # check data type. Int does not work!!!! (idk why, jax throws errors)
         # # [NOTE] float32 or float64 ARE float, so will just check if it is a float instead of differentiationg between 32 or 64
@@ -62,7 +62,8 @@ class LipschitzApproximator:
 #[TODO] Fix This as it should be non-differentiable with respect to the first 4 parameters
 # Note I have to pull this function out of the class because Jax cannot jit or differentiate class methods
 # So we pull the function out, and call it from the class
-@jax.custom_jvp
+@partial(jax.custom_jvp, nondiff_argnums=(0,1,2,3,4))
+# @jax.custom_jvp
 def f_approximate(boundsOnFunctionValues, x_data, f_x_data, importanceWeights, lipschitzConstants, x_to_predict):
     # initial bound is -inf, inf
     f_x_bounds = boundsOnFunctionValues
@@ -98,16 +99,12 @@ def f_approximate(boundsOnFunctionValues, x_data, f_x_data, importanceWeights, l
     return f_x_bounds
 
 
-#[TODO] Fix This as it should be non-differentiable with respect to the first 4 parameters
-#[TODO] Plus it is wrong, the Lipschitz must be multiplied by the weight to get the actual range
 # We cannot find the derivate at x. However, we do know the Lipschitz constant, so the derivative is between -Lipschitz and +Lipschitz
 # so we can return that
 @f_approximate.defjvp
-def jvp_f_approximate( primal, tangents):
-    """ Addition between two intervals
-    """
-    boundsOnFunctionValues, x_data, f_x_data, importanceWeights, lipschitzConstants, x_to_predict = primal
-    boundsOnFunctionValues_dot,  x_data_dot, f_x_data_dot, importanceWeights_dot, lipschitzConstants_dot, x_to_predict_dot = tangents
+def jvp_f_approximate(boundsOnFunctionValues, x_data, f_x_data, importanceWeights, lipschitzConstants, primal, tangents):
+    x_to_predict, = primal
+    x_to_predict_dot, = tangents
     value = f_approximate(boundsOnFunctionValues, x_data, f_x_data, importanceWeights, lipschitzConstants, x_to_predict)
-    derivative = Interval(-1.0, 1.0) *lipschitzConstants
+    derivative = jp.matmul(importanceWeights, x_to_predict_dot) * lipschitzConstants * Interval(-1.0, 1.0)
     return value, derivative

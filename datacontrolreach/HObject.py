@@ -15,7 +15,7 @@ class HObject:
     """ A class to approximate a function given Lipschitz constants for each dimension and data in the form x, Interval of F(x)
     """
     def __init__(self, shape_x, shape_u, known_functions, unknown_approximations, H, contractions):
-        assert len(contractions) == len(unknown_approximations)
+        assert len(contractions) == len(unknown_approximations), 'There must be 1 contraction per unknown approximation. Got {} unknown contractions and {} approximations'.format(len(unknown_approximations), len(contractions))
 
         self.shape_x = shape_x
         self.shape_u = shape_u
@@ -99,8 +99,8 @@ def inverse_contraction_C(A, B, C_approx:Interval):
 # simply swap the order of the arguments
 # Returns a contracted vector of intervals
 def contract_row_wise(dot_product, vector1: Interval, vector2):
-    assert vector1.ndim == 1, 'vector1 must be a vector, IE of size (M,)'
-    assert vector2.ndim == 1, 'vector2 must be a vector, IE of size (M,)'
+    assert vector1.ndim == 1, 'vector1 must be a vector, IE of size (M,). Got {}'.format(vector1.ndim)
+    assert vector2.ndim == 1, 'vector2 must be a vector, IE of size (M,). Got {}'.format(vector2.ndim)
     return hc4revise_lin_eq(dot_product, vector2, vector1)
 
 

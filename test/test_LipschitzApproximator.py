@@ -93,13 +93,14 @@ def test_jacobian_approximate(seed):
 
     lipAprox = LipschitzApproximator(input_shape, output_shape, lipschitz, f_value_bounds)
     x1 = jp.array([1.0, 2.0, 3.0])
-    lipAprox.add_data(x1, Interval(np.array([0.0, 0.0])))
+    lipAprox.add_data(x1, Interval(jp.array([0.0, 0.0])))
 
     # test interval + interval
     value, derivative = jax.jvp(f_approximate,
                                 (lipAprox.boundsOnFunctionValues, lipAprox.x_data, lipAprox.f_x_data, lipAprox.importanceWeights, lipAprox.lipschitzConstants, x1),
                                 (lipAprox.boundsOnFunctionValues, lipAprox.x_data, lipAprox.f_x_data, lipAprox.importanceWeights, lipAprox.lipschitzConstants, x1))
-    assert (derivative == Interval(-1.0, 1.0) * lipschitz).all(), 'Jacobian for Subtraction between intervals fails : {} , {}\n'.format(derivative, Interval(-1.0, 1.0) * lipschitz).all()
+    assert (derivative == jp.matmul(jp.ones(output_shape + input_shape), x1) * lipschitz * Interval(-1.0, 1.0)).all(), 'Jacobian for Subtraction between intervals fails : {} , {}\n'.format(derivative, Interval(-1.0, 1.0) * lipschitz).all()
+test_jacobian_approximate(1)
 
 def test_jacobian_approximate_2d(seed):
     np.random.seed(seed)
@@ -119,5 +120,5 @@ def test_jacobian_approximate_2d(seed):
     value, derivative = jax.jvp(f_approximate,
                                 (lipAprox.boundsOnFunctionValues, lipAprox.x_data, lipAprox.f_x_data, lipAprox.importanceWeights, lipAprox.lipschitzConstants, x1),
                                 (lipAprox.boundsOnFunctionValues, lipAprox.x_data, lipAprox.f_x_data, lipAprox.importanceWeights, lipAprox.lipschitzConstants, x1))
-    assert (derivative == Interval(-1.0, 1.0) * lipschitz).all(), 'Jacobian for Subtraction between intervals fails : {} , {}\n'.format(derivative, Interval(-1.0, 1.0) *  lipschitz).all()
+    assert (derivative == jp.matmul(jp.ones(output_shape + input_shape), x1) * lipschitz * Interval(-1.0, 1.0)).all(), 'Jacobian for Subtraction between intervals fails : {} , {}\n'.format(derivative, Interval(-1.0, 1.0) *  lipschitz).all()
 

@@ -8,6 +8,9 @@ import math
 import random
 from typing import Optional
 from os import path
+from gym.envs.classic_control import rendering
+import matplotlib.pyplot as plt
+
 
 class UnicycleMDP(gym.Env):
   metadata = {'render.modes': ['human']}
@@ -92,31 +95,44 @@ class UnicycleMDP(gym.Env):
   def distance_to_destination(self):
       return math.sqrt((self.state[0] - self.destination[0])**2 + (self.state[1] - self.destination[1])**2)
 
-  def render(self, mode="human"):
+  def render(self, mode="human", predictions=None):
       if self.viewer is None:
-          from gym.envs.classic_control import rendering
-
           # make viewer, set bounds
           self.viewer = rendering.Viewer(500, 500)
           self.viewer.set_bounds(-5.0, 5.0, -5.0, 5.0)
 
-          # make the unicycle image
-          fname = path.join(path.dirname(__file__), "unicycle.png") # found at https://pixabay.com/vectors/unicycle-bike-wheel-sport-fun-310174/ for free use via google
-          width = 1.0
-          self.img = rendering.Image(fname, width, width * 1280.0/712.0)
-          self.imgtrans = rendering.Transform()
-          self.img.add_attr(self.imgtrans)
+      # draw a box for each prediction
+      for index in range(predictions.shape[0]):
+            x, y = predictions[index][0], predictions[index][1]
+            l, r, t, b = x.lb, x.ub, y.ub, y.lb
+            width = r-l
+            height = t-b
+            prediction = rendering.FilledPolygon([(-width/2, -height/2), (-width/2, height/2), (width/2, height/2), (width/2, -height/2)])
+            imgtrans = rendering.Transform()
+            imgtrans.translation = ((r+l)/2.0, (t+b)/2.0)
+            prediction.add_attr(imgtrans)
+            prediction._color.vec4 = (0.0, 0.0, 0.0, 0.2)
+            self.viewer.add_onetime(prediction)
 
-          # make the destination point
-          destination = rendering.make_circle(0.25)
-          destination.set_color(255, 0, 0)
-          destination.translation = (self.destination[0], self.destination[1])
-          self.viewer.add_geom(destination)
+      # make the unicycle image
+      # fname = path.join(path.dirname(__file__), "unicycle.png") # found at https://pixabay.com/vectors/unicycle-bike-wheel-sport-fun-310174/ for free use via google
+      # width = 1.0
+      # self.img = rendering.Image(fname, width, width * 1280.0/712.0)
+      # self.imgtrans = rendering.Transform()
+      # self.img.add_attr(self.imgtrans)
+      unicycle = rendering.make_circle(0.1)
+      unicycle.set_color(0, 0, 255)
+      unicycle_transform = rendering.Transform()
+      unicycle_transform.translation = (self.state[0], self.state[1])
+      unicycle.add_attr(unicycle_transform)
+      self.viewer.add_onetime(unicycle)
 
+      # make the destination point
+      destination = rendering.make_circle(0.25)
+      destination.set_color(255, 0, 0)
+      destination.translation = (self.destination[0], self.destination[1])
+      self.viewer.add_onetime(destination)
 
-      # move the unicycle as needed
-      self.viewer.add_onetime(self.img)
-      self.imgtrans.translation = (self.state[0], self.state[1])
 
       return self.viewer.render(return_rgb_array=mode == "rgb_array")
 
@@ -125,3 +141,18 @@ class UnicycleMDP(gym.Env):
           self.viewer.close()
           self.viewer = None
 
+  def plot(self, states):
+      xs = []
+      #ys = []
+      #thetas = []
+      for i in range(len(states)):
+          s = states[i]
+          xs.append((s[0].lb, s[0].ub))
+          #ys.append(s[1])
+          #thetas.append(s[2])
+      # Plot xs, need to repeat for Ys and thetas
+      plt.plot(xs, label='lower bound')
+      plt.legend(['Lower bound', 'Upper bound'])
+      plt.xlabel("dT")
+      plt.ylabel("X reachable set")
+      plt.show()
