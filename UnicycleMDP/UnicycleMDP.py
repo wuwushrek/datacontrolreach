@@ -62,6 +62,7 @@ class UnicycleMDP(gym.Env):
   # takes the given action and applies it to the env. Changes state
   # Updates t. Returns current t as info
   def step(self, action):
+      assert len(action) == 2
       theta = self.state[2]
 
       # state dot does not depend on current state
@@ -80,7 +81,7 @@ class UnicycleMDP(gym.Env):
       reward = -self.distance_to_destination()
       self.t += self.dt
 
-      return self.state, reward, self.is_terminated(), self.t
+      return self.state, reward, self.is_terminated(), self.state_dot # info = state dot in this case
 
   # directly return the state_dot from the previous update step.
   def get_state_dot(self):
@@ -95,14 +96,15 @@ class UnicycleMDP(gym.Env):
   def distance_to_destination(self):
       return math.sqrt((self.state[0] - self.destination[0])**2 + (self.state[1] - self.destination[1])**2)
 
-  def render(self, mode="human", predictions=None):
+  def render(self, mode="human", predictions=None, sleep=0.0):
       if self.viewer is None:
           # make viewer, set bounds
           self.viewer = rendering.Viewer(500, 500)
           self.viewer.set_bounds(-5.0, 5.0, -5.0, 5.0)
 
       # draw a box for each prediction
-      for index in range(predictions.shape[0]):
+      num_predictions = predictions.shape[0] if predictions is not None else 0
+      for index in range(num_predictions):
             x, y = predictions[index][0], predictions[index][1]
             l, r, t, b = x.lb, x.ub, y.ub, y.lb
             width = r-l
@@ -133,9 +135,9 @@ class UnicycleMDP(gym.Env):
       destination.translation = (self.destination[0], self.destination[1])
       self.viewer.add_onetime(destination)
 
-
-      return self.viewer.render(return_rgb_array=mode == "rgb_array")
-
+      res =  self.viewer.render(return_rgb_array=mode == "rgb_array")
+      time.sleep(sleep)
+      return res
   def close(self):
       if self.viewer:
           self.viewer.close()

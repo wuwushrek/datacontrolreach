@@ -11,7 +11,8 @@ import jax.numpy as jnp
 class DifferentialInclusionAgent:
     """ A class to approximate a function given Lipschitz constants for each dimension and data in the form x, Interval of F(x)
     """
-    def __init__(self, state_space, action_space, HObject, dt, exploration_steps = None):
+    # cost function should take in (x, u, x+1) and return a scalar cost. We will try to minimize this eventually.
+    def __init__(self, state_space, action_space, HObject, dt, cost_function, look_ahead_steps, descent_steps, learning_rate, exploration_steps = None):
         self.number_states = state_space.shape[0]
         self.number_actions = action_space.shape[0]
         self.state_space = state_space   # maybe dont need this
@@ -20,6 +21,12 @@ class DifferentialInclusionAgent:
         self.data_collected = 0
         self.dt = dt
         self.exploration_steps = exploration_steps if exploration_steps is not None else self.number_actions + 1
+        self.cost_function = cost_function
+        self.look_ahead_steps = look_ahead_steps
+        self.descent_steps = descent_steps
+        self.learning_rate = learning_rate
+        self.states_future = None
+        self.actions_future = None
 
     # recall the equation is X_dot = (F_known(X) + F_unknown(X)) + (G_known(X) + G_unknown(X)) * U
     # therefore, F_unknown(X) = (X_dot - (G_known(X) + G_unknown(X)) * U) - F_known(X)
@@ -57,29 +64,17 @@ class DifferentialInclusionAgent:
             ret = ret.at[index_to_change].set(self.action_space.sample()[index_to_change]) # weird format for setting index, required by jax
             return ret
 
-
-    # action is an interval, so it can either find state dot for a given action or for a set of possible actions
-    def predict_n_states(self, initial_state, actions_function, actions_function_derivative, current_time):
-        # find x dot
-        #state_dot = self.hobject.get_x_dot(state, action)
-        # find state dot derivative
-        #state_dot_derivative = something
-
-        # convert x dot to next state. Uses second order approximation
-        number_states = 10
-        states, times = DaTaReach(self.hobject, initial_state, current_time, number_states, self.dt, actions_function, actions_function_derivative)
-        return states
-
-
     def control_theory(self, state):
-        action = lambda x : Interval(jp.zeros(self.action_space.shape))
-        states = self.predict_n_states(state, action, action, 0.0)
-        print("states= ", states)
+        actions, states = pick_actions(state, self.look_ahead_steps, self.number_actions, self.hobject, self.dt, self.cost_function, self.descent_steps, self.learning_rate)
+        self.states_future = states
+        self.actions_future = actions
+        return actions[0, :]
 
-
-        # return self.action_space.sample()
-        raise NotImplementedError
-
+    # returns future states given future actions. This is from our computation assuming we have used control theory.
+    # during excitation, returns none, none.
+    # Does not compute anything new
+    def get_future(self):
+        return self.states_future, self.actions_future
 
 
 def apriori_enclosure(hobject, x, u_interval, dt, fixpointWidenCoeff=0.2,
@@ -119,7 +114,7 @@ def apriori_enclosure(hobject, x, u_interval, dt, fixpointWidenCoeff=0.2,
     return x + S_dot * iv_odt, x_dot, S_dot
 
 
-def DaTaReach(hobject, x0, t0, nPoint, dt, uOver, uDer,
+def DaTaReach(hobject, x0, dt, actions,
                 fixpointWidenCoeff=0.2, zeroDiameter=1e-5,
                 containTol=1e-4, maxFixpointIter=10):
     """ Compute an over-approximation of the reachable set at time
@@ -128,12 +123,9 @@ def DaTaReach(hobject, x0, t0, nPoint, dt, uOver, uDer,
     Parameters
     ----------
     :param dyn : The object representing the dynamics with side information
-    :param x0 : Intial state
-    :param t0 : Initial time
-    :param nPoint : Number of point
+    :param x0 : Initial state
     :param dt : Integration time
-    :param uOver : interval extension of the control signal u
-    :param uDer : Interval extension of the derivative of the control signal u
+    :param actions : ND array of actions, 1 action vector for each timestep we seek to predict. If M is dimensions of action, and N is number of steps, should be NxM
     :param fixpointWidenCoeff : A coefficient to enlarge the a priori enclosure
     :param containTol : THe tolerance to determine if a fixpoint has been reached
     :param maxFixpointIter : The maximum number of fixpoint iteration
@@ -146,21 +138,19 @@ def DaTaReach(hobject, x0, t0, nPoint, dt, uOver, uDer,
         a list of the over-approximation of the state at the above time
     """
 
-    # Save the integration time
-    integTime = jp.array([t0 + i*dt for i in range(nPoint+1)])
-
     # Save the tube of over-approximation of the reachable set
     curr_x = Interval(x0)
 
     # Constant to not compute every time
     dt_2 = (0.5* dt**2)
 
+    num_actions = jp.shape(actions)[0]
+
     # Define the main body to compute the over-approximation
-    def op(xt, tval):
+    def op(xt, index):
         # Over approximation of the control signal between t and t+dt
-        ut = uOver(tval)
-        ut_dt = uOver(Interval(tval, tval+dt))
-        uder_t_dt = uDer(Interval(tval, tval+dt))
+        ut = actions[index, :]
+        ut_dt = actions[index, :]
 
 
         # Compute the remainder term given the dynamics evaluation at t
@@ -172,13 +162,49 @@ def DaTaReach(hobject, x0, t0, nPoint, dt, uOver, uDer,
 
         # Define the dynamics function
         dyn_fun = lambda x : hobject.get_x_dot(x, ut_dt)
-        dyn_fun_u = lambda u : hobject.get_x_dot(St, u)
 
         _, rem = jax.jvp(dyn_fun, (St,), (fst_utdt,))
-        _, remu = jax.jvp(dyn_fun_u, (ut_dt,), (uder_t_dt,))
-        next_x = xt + dt * fxt_ut + dt_2 * (rem + remu)
+        next_x = xt + dt * fxt_ut + dt_2 * rem
         return next_x, next_x
 
     # Scan over the operations to obtain the reachable set
-    _, res = jax.lax.scan(op, curr_x, integTime[:-1])
-    return jp.vstack((curr_x,res)), integTime
+    _, res = jax.lax.scan(op, curr_x, jp.array(range(num_actions)))
+    return jp.vstack((curr_x,res))
+
+# Returns a list of states, starting with the initial state, of predicted states given the actions
+def predict_n_states(initial_state, actions, hobject, dt):
+        # convert x dot to next state. Uses second order approximation
+        states = DaTaReach(hobject, initial_state, dt, actions)
+        return states
+
+# todo make into jittable loop
+def compute_trajectory_cost(states, actions, cost_function):
+    # Carry is initially 0. Is incredemented by the cost for each state, action, next_state pair
+    def f(carry, x):
+        carry += cost_function(states[x, :], actions[x, :], states[x, :])
+        return carry, 0
+    carry, _ = jax.lax.scan(f, 0, jp.array(range(jp.shape(actions)[0])))
+    return carry
+
+def pick_actions(initial_state, look_ahead_steps, action_dims, hobject, dt, cost_function, descent_steps, learning_rate):
+    # init random? actions
+    actions = jp.zeros((look_ahead_steps, action_dims))
+    states = None
+
+    # optimize via a loop of some kind. This one is vanilla gradient descent
+    for i in range(descent_steps):
+        states = predict_n_states(initial_state, actions, hobject, dt)
+        print("States ", states)
+        total_cost = compute_trajectory_cost(states, actions, cost_function)
+        print("Cost ", total_cost)
+
+        derivative_cost_wrt_actions = 0 # something?? # todo
+
+        print("Descending ", i)
+
+        # descent
+        actions -= derivative_cost_wrt_actions * learning_rate
+
+
+    return actions, states
+
