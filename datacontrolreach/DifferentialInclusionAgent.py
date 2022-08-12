@@ -72,7 +72,7 @@ class DifferentialInclusionAgent:
         self.actions_future = actions
         # print("States ", self.states_future)
         # print("Actions ", self.actions_future)
-        return actions[0, :]
+        return actions[0, :] # returns the first action we have planned
 
     # returns future states given future actions. This is from our computation assuming we have used control theory.
     # during excitation, returns none, none.
@@ -93,9 +93,12 @@ def apriori_enclosure(knowns, unknowns, H, x, u_interval, dt, fixpointWidenCoeff
     # First compute the vector field at the current pont
     # x_dot = get_x_dot(hobject,  x, u_interval)
     x_dot = H(x, u_interval, knowns, unknowns)
+    print("Xdot = ", type(x_dot), jp.shape(x_dot))
+
     # Initial a priori enclosure using the fixpoint formula
     iv_odt = Interval(0., dt)
     S = x + x_dot * iv_odt
+    print("S = ", type(S), jp.shape(S))
 
     # Prepare the loop
     def cond_fun(carry):
@@ -104,8 +107,8 @@ def apriori_enclosure(knowns, unknowns, H, x, u_interval, dt, fixpointWidenCoeff
 
     def body_fun(carry):
         _, count, _pastS = carry
-         #_newS = x + get_x_dot(hobject, _pastS, u_interval) * iv_odt
         _newS = x + H(_pastS, u_interval, knowns, unknowns) * iv_odt
+
         # Width increment step
         width_pasS = _pastS.width
         radIncr = jp.where( width_pasS <= zeroDiameter, jp.abs(_pastS.ub), width_pasS) * fixpointWidenCoeff
@@ -175,13 +178,11 @@ def DaTaReach(knowns, unknowns, H, x0, dt, actions,
     return jp.vstack((curr_x,res))
 
 # Returns a list of states, starting with the initial state, of predicted states given the actions
-#def predict_n_states(initial_state, actions, hobject, dt):
 def predict_n_states(initial_state, actions, knowns, unknowns, H, dt):
         # convert x dot to next state. Uses second order approximation
         states = DaTaReach(knowns, unknowns, H, initial_state, dt, actions)
         return states
 
-# todo make into jittable loop
 def compute_trajectory_cost(actions, states, cost_function):
     # Carry is initially 0. Is incredemented by the cost for each state, action, next_state pair
     # Thus the result is the sum of costs at each timestep
@@ -191,9 +192,7 @@ def compute_trajectory_cost(actions, states, cost_function):
     carry, _ = jax.lax.scan(compute_cost_of_SAS, 0, jp.array(range(jp.shape(actions)[0])))
     return carry
 
-# def predict_n_cost(actions, initial_state, hobject, dt, cost_function):
 def predict_n_cost(actions, initial_state, knowns, unknowns, H, dt, cost_function):
-    # states = predict_n_states(initial_state, actions, hobject, dt)
     states = predict_n_states(initial_state, actions,  knowns, unknowns, H, dt)
     costs = compute_trajectory_cost(actions, states, cost_function)
     return costs

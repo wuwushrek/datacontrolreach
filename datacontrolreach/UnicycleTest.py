@@ -74,8 +74,8 @@ for _ in range(1000):
     action = agent.act(observation)
 
     # for our sake
-    future_states, future_actions = agent.get_future()  # fetch op, no computation
-    env.render(predictions=future_states, sleep=1.0)
+    #future_states, future_actions = agent.get_future()  # fetch op, no computation
+    #env.render(predictions=future_states, sleep=1.0)
     # env.plot(states)
 
     # get result of action

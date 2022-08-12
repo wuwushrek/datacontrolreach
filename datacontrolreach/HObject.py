@@ -8,7 +8,6 @@ import jax
 import jax.numpy as jnp
 import random
 from functools import partial
-from jax import jit
 from typing import NamedTuple
 
 

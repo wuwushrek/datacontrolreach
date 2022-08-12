@@ -1,4 +1,6 @@
  # has to go in this order because of circular dependencies....
+import copy
+
 import numpy as np
 import datacontrolreach.jumpy as jp
 from datacontrolreach import interval
@@ -14,7 +16,7 @@ class LipschitzApproximator(NamedTuple):
 
     lipschitzConstants:jp.array         # Lipschitz constants with respect to the outputs.
     boundsOnFunctionValues:Interval     # Bounds the possible outputs of the function with respect to each output
-    importanceWeights:jp.array          # How important each input is with respect to outputs. Must of shape inputs x outputs
+    importanceWeights:jp.array          # How important each input is with respect to outputs. Must of shape outputs x inputs
 
     x_data:jp.array                     # Data we have collected on the function. This is input records
     f_x_data:Interval                   # Data we have collected on the function. This is output estimates via intervals
@@ -46,7 +48,7 @@ def init_LipschitzApproximator(shapeOfInputs, shapeOfOutputs, lipschitzConstants
 
 
 def approximate(LipschitzApproximator:LipschitzApproximator, x_to_predict):
-    assert LipschitzApproximator.shapeOfInputs == x_to_predict.shape, 'x_to_predict size wrong. Expected {} , got {}\n'.format(LipschitzApproximator.shapeOfInputs, x_to_predict.shape)
+    # assert LipschitzApproximator.shapeOfInputs == x_to_predict.shape, 'x_to_predict size wrong. Expected {} , got {}\n'.format(LipschitzApproximator.shapeOfInputs, x_to_predict.shape)
     return f_approximate(LipschitzApproximator.boundsOnFunctionValues,
                          LipschitzApproximator.x_data,
                          LipschitzApproximator.f_x_data,
@@ -71,13 +73,13 @@ def add_data(la:LipschitzApproximator, x, f_x: Interval):
                                  x_data, f_x_data,
                                  la.max_data_size, index + 1)
 
-#[TODO] Fix This as it should be non-differentiable with respect to the first 4 parameters
 # Note I have to pull this function out of the class because Jax cannot jit or differentiate class methods
 # So we pull the function out, and call it from the class
 @partial(jax.custom_jvp, nondiff_argnums=(0,1,2,3,4))
 def f_approximate(boundsOnFunctionValues, x_data, f_x_data, importanceWeights, lipschitzConstants, x_to_predict):
     # initial bound is -inf, inf
-    f_x_bounds = boundsOnFunctionValues
+    # Deep copy
+    f_x_bounds = Interval(jp.array(boundsOnFunctionValues.lb), jp.array(boundsOnFunctionValues.ub))
 
     # for each data point, find bound based on lipschitz constants. Then find intersection
     for index in range(x_data.shape[0]):
