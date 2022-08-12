@@ -14,7 +14,7 @@ import matplotlib.pyplot as plt
 
 class UnicycleMDP(gym.Env):
   metadata = {'render.modes': ['human']}
-  def __init__(self, destination=[0.0, 0.0], reached_destination_distance=0.5, dt=0.1, t_limit = 100.0, seed = 123, render_mode: Optional[str] = None,):
+  def __init__(self, destination=[0.0, 0.0], reached_destination_distance=0.1, dt=0.1, t_limit = 100.0, seed = 123, render_mode: Optional[str] = None,):
     # index 0 = x position
     # index 1 = y position
     # index 2 = direction in radians. 0 radians = points along positive x axis
@@ -45,7 +45,7 @@ class UnicycleMDP(gym.Env):
 
   # resets to a random state, sets t to 0 again
   def reset(self, *, seed: Optional[int] = None, return_info: bool = False, options: Optional[dict] = None):
-      random.seed(seed)
+      # random.seed(seed)
 
       # get random initial state
       self.state = np.array([random.uniform(-5.0, 5.0),
@@ -96,7 +96,7 @@ class UnicycleMDP(gym.Env):
   def distance_to_destination(self):
       return math.sqrt((self.state[0] - self.destination[0])**2 + (self.state[1] - self.destination[1])**2)
 
-  def render(self, mode="human", predictions=None, sleep=0.0):
+  def render(self, mode="human", predictions=None, sleep=0.0, show_centers=True):
       if self.viewer is None:
           # make viewer, set bounds
           self.viewer = rendering.Viewer(500, 500)
@@ -116,6 +116,20 @@ class UnicycleMDP(gym.Env):
             prediction._color.vec4 = (0.0, 0.0, 0.0, 0.2)
             self.viewer.add_onetime(prediction)
 
+            if show_centers:
+                center = rendering.make_circle(0.1)
+                center.set_color(0, 255, 0)
+                center_transform = rendering.Transform()
+                center_transform.translation = ((l+r)/2.0, (t+b)/2.0)
+                center.add_attr(center_transform)
+                self.viewer.add_onetime(center)
+
+      # make the destination point
+      destination = rendering.make_circle(0.25)
+      destination.set_color(255, 0, 0)
+      destination.translation = (self.destination[0], self.destination[1])
+      self.viewer.add_onetime(destination)
+
       # make the unicycle image
       # fname = path.join(path.dirname(__file__), "unicycle.png") # found at https://pixabay.com/vectors/unicycle-bike-wheel-sport-fun-310174/ for free use via google
       # width = 1.0
@@ -129,11 +143,6 @@ class UnicycleMDP(gym.Env):
       unicycle.add_attr(unicycle_transform)
       self.viewer.add_onetime(unicycle)
 
-      # make the destination point
-      destination = rendering.make_circle(0.25)
-      destination.set_color(255, 0, 0)
-      destination.translation = (self.destination[0], self.destination[1])
-      self.viewer.add_onetime(destination)
 
       res =  self.viewer.render(return_rgb_array=mode == "rgb_array")
       time.sleep(sleep)
