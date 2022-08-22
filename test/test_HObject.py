@@ -159,8 +159,8 @@ def test_H_object(seed):
 
     ]
     contractions = [  # recall Xdot = H = F(X) + G(X) * U
-        lambda x, u, xdot, known, unknown: xdot - jp.matmul(unknown[1](x), u),  # F(X) = xdot - G(X) * U
-        lambda x, u, xdot, known, unknown: inverse_contraction_B(xdot - unknown[0](x), unknown[1](x), u),
+        lambda x, u, xdot, known, unknown: xdot - jp.matmul(approximate(unknown[1],x), u),  # F(X) = xdot - G(X) * U
+        lambda x, u, xdot, known, unknown: inverse_contraction_B(xdot - approximate(unknown[0], x), approximate(unknown[1], x), u),
                                                 # G(X) = (xdot - F(X)) U^-1
                                                 # Recall we cannot use pseudo-inverse and must use inverse_contraction_B instead
     ]
@@ -194,7 +194,7 @@ def test_H_object2(seed):
     known_functions = [lambda x: jp.array([0.0, 0.0, 0.0]),
                        lambda x: jp.array([[0.0, 0.0], [0.0, 0.0], [0.0, 0.0]])
                        ]
-    H = lambda x, u, known, unknown: (unknown[0](x) + known[0](x)) + jp.matmul((unknown[1](x) + known[1](x)), u)
+    H = lambda x, u, known, unknown: (approximate(unknown[0],x) + known[0](x)) + jp.matmul((approximate(unknown[1], x) + known[1](x)), u)
     unknown_approximators = [
         init_LipschitzApproximator(shape_x, shape_x, jp.array([10.0, 5.0, 3.0]), 10), # This is F(X), which outputs a Nx1 array
         init_LipschitzApproximator(shape_x, (shape_x[0], shape_u[0]),
@@ -205,8 +205,8 @@ def test_H_object2(seed):
 
     ]
     contractions = [  # recall Xdot = H = (F(X) + Fknown(x)) + (G(X) + Gknown(x))*U
-        lambda x, u, xdot, known, unknown: xdot - known[0](x) - jp.matmul((unknown[1](x) + known[1](x)), u),  # F(X) = xdot - G(X) * U
-        lambda x, u, xdot, known, unknown: inverse_contraction_B(xdot - unknown[0](x) - known[0](x), unknown[1](x) + known[1](x), u) - known[1](x),
+        lambda x, u, xdot, known, unknown: xdot - known[0](x) - jp.matmul((approximate(unknown[1],x) + known[1](x)), u),  # F(X) = xdot - G(X) * U
+        lambda x, u, xdot, known, unknown: inverse_contraction_B(xdot - approximate(unknown[0], x) - known[0](x), approximate(unknown[1], x) + known[1](x), u) - known[1](x),
                                                 # G(X) = (xdot - Funknown(X) - fknown(x)) U^-1
                                                 # Recall we cannot use pseudo-inverse and must use inverse_contraction_B instead
                                                 # Inverse contraction does the operation X = G*U, where the first arg = x, second = estimate for G, third = u
@@ -216,7 +216,7 @@ def test_H_object2(seed):
 
     x = jp.array([1.0, 2.0, 3.0])
     u = jp.array([0.0, 0.0])
-    expected_x_dot = unknown_approximators[0](x) + jp.matmul(unknown_approximators[1](x), u)
+    expected_x_dot = approximate(unknown_approximators[0], x) + jp.matmul(approximate(unknown_approximators[1], x), u)
     result = get_x_dot(h_obj, x, u)
     assert (expected_x_dot == result).all(), '1.H object prediction error. Expected {} , got {}\n'.format(expected_x_dot, result)
 
@@ -242,7 +242,7 @@ def test_H_object3(seed):
     known_functions = [lambda x: jp.array([1.0, 1.0, 1.0]),
                        lambda x: jp.array([[1.0, 1.0], [1.0, 1.0], [1.0, 1.0]])
                        ]
-    H = lambda x, u, known, unknown: (unknown[0](x) + known[0](x)) + jp.matmul((unknown[1](x) + known[1](x)), u)
+    H = lambda x, u, known, unknown: (approximate(unknown[0], x) + known[0](x)) + jp.matmul((approximate(unknown[1],x) + known[1](x)), u)
     unknown_approximators = [
         init_LipschitzApproximator(shape_x, shape_x, jp.array([10.0, 5.0, 3.0]), 10), # This is F(X), which outputs a Nx1 array
         init_LipschitzApproximator(shape_x, (shape_x[0], shape_u[0]),
@@ -253,8 +253,8 @@ def test_H_object3(seed):
 
     ]
     contractions = [  # recall Xdot = H = (F(X) + Fknown(x)) + (G(X) + Gknown(x))*U
-        lambda x, u, xdot, known, unknown: xdot - known[0](x) - jp.matmul((unknown[1](x) + known[1](x)), u),  # F(X) = xdot - G(X) * U
-        lambda x, u, xdot, known, unknown: inverse_contraction_B(xdot - unknown[0](x) - known[0](x), unknown[1](x) + known[1](x), u) - known[1](x),
+        lambda x, u, xdot, known, unknown: xdot - known[0](x) - jp.matmul((approximate(unknown[1], x) + known[1](x)), u),  # F(X) = xdot - G(X) * U
+        lambda x, u, xdot, known, unknown: inverse_contraction_B(xdot - approximate(unknown[0], x) - known[0](x), approximate(unknown[1], x) + known[1](x), u) - known[1](x),
                                                 # G(X) = (xdot - Funknown(X) - fknown(x)) U^-1
                                                 # Recall we cannot use pseudo-inverse and must use inverse_contraction_B instead
                                                 # Inverse contraction does the operation X = G*U, where the first arg = x, second = estimate for G, third = u
@@ -264,7 +264,7 @@ def test_H_object3(seed):
 
     x = jp.array([1.0, 2.0, 3.0])
     u = jp.array([0.0, 0.0])
-    expected_x_dot = (unknown_approximators[0](x) + known_functions[0](x)) + jp.matmul((unknown_approximators[1](x) + known_functions[1](x)), u)
+    expected_x_dot = (approximate(unknown_approximators[0], x) + known_functions[0](x)) + jp.matmul((approximate(unknown_approximators[1], x) + known_functions[1](x)), u)
     result = get_x_dot(h_obj, x, u)
     assert (expected_x_dot == result).all(), '1.H object prediction error. Expected {} , got {}\n'.format(expected_x_dot, result)
 
@@ -291,13 +291,13 @@ def test_H_object4(seed):
     known_functions = [lambda x, u: jp.ones(shape_x),
                        lambda x, u: jp.ones((shape_x[0], k)),
                        ]
-    H = lambda x, u, known, unknown: known[0](x,u) + jp.matmul(known[1](x,u), unknown[0](x))
+    H = lambda x, u, known, unknown: known[0](x,u) + jp.matmul(known[1](x,u), approximate(unknown[0], x))
 
     unknown_approximators = [
         init_LipschitzApproximator(shape_x, (k,), jp.ones((k,)), 10), # lipschitz is all 1's
     ]
     contractions = [
-        lambda x, u, xdot, known, unknown: inverse_contraction_C(xdot - known[0](x,u), known[1](x, u), unknown[0](x))
+        lambda x, u, xdot, known, unknown: inverse_contraction_C(xdot - known[0]( x,u), known[1](x, u), approximate(unknown[0], x))
 
     ]
 
@@ -305,7 +305,7 @@ def test_H_object4(seed):
 
     x = jp.array([1.0, 2.0, 3.0])
     u = jp.array([0.0, 0.0])
-    expected_x_dot = known_functions[0](x,u) + jp.matmul(known_functions[1](x,u), unknown_approximators[0](x))
+    expected_x_dot = known_functions[0](x,u) + jp.matmul(known_functions[1](x,u), approximate(unknown_approximators[0], x))
     result = get_x_dot(h_obj, x, u)
     assert (expected_x_dot == result).all(), '1.H object prediction error. Expected {} , got {}\n'.format(expected_x_dot, result)
 
@@ -334,7 +334,7 @@ def test_H_object5(seed):
                                                jp.concatenate((x, u)))),
                        ]
 
-    H = lambda x, u, known, unknown: known[0](x,u) + jp.matmul(known[1](x,u), unknown[0](x))  # given that known[0] is zeros,
+    H = lambda x, u, known, unknown: known[0](x,u) + jp.matmul(known[1](x,u), approximate(unknown[0], x))  # given that known[0] is zeros,
                                                                                               # And known[1] is x x x u u
                                                                                                               # x x x u u
                                                                                                               # x x x u u
@@ -346,7 +346,7 @@ def test_H_object5(seed):
                                 boundsOnFunctionValues = Interval(jp.ones((k,)) * -100.0, jp.ones((k,)) * 100.0, )), # BOUND IS -100 TO 100
     ]
     contractions = [
-        lambda x, u, xdot, known, unknown: inverse_contraction_C(xdot - known[0](x,u), known[1](x, u), unknown[0](x))
+        lambda x, u, xdot, known, unknown: inverse_contraction_C(xdot - known[0]( x,u), known[1](x, u), approximate(unknown[0],x))
 
     ]
 
@@ -354,7 +354,7 @@ def test_H_object5(seed):
 
     x = jp.array([1.0, 2.0, 3.0])
     u = jp.array([0.0, 0.0])
-    expected_x_dot = known_functions[0](x,u) + jp.matmul(known_functions[1](x,u), unknown_approximators[0](x))
+    expected_x_dot = known_functions[0](x,u) + jp.matmul(known_functions[1](x,u), approximate(unknown_approximators[0], x))
     result = get_x_dot(h_obj, x, u)
     assert (expected_x_dot == result).all(), '1.H object prediction error. Expected {} , got {}\n'.format(expected_x_dot, result)
 
