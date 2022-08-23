@@ -65,13 +65,9 @@ class DifferentialInclusionAgent:
             return ret
 
     def control_theory(self, state):
-        # start = timeit.default_timer()
         actions, states = pick_actions(state, self.look_ahead_steps, self.number_actions, tuple(self.hobject.known_functions), self.hobject.unknown_approximations, self.hobject.H, self.dt, self.cost_function, self.descent_steps, self.learning_rate, self.action_space.low, self.action_space.high)
-        # print("Time taken: ", timeit.default_timer() - start)
         self.states_future = states
         self.actions_future = actions
-        # print("States ", self.states_future)
-        # print("Actions ", self.actions_future)
         return actions[0, :] # returns the first action we have planned
 
     # returns future states given future actions. This is from our computation assuming we have used control theory.
@@ -93,12 +89,12 @@ def apriori_enclosure(knowns, unknowns, H, x, u_interval, dt, fixpointWidenCoeff
     # First compute the vector field at the current pont
     # x_dot = get_x_dot(hobject,  x, u_interval)
     x_dot = H(x, u_interval, knowns, unknowns)
-    print("Xdot = ", type(x_dot), jp.shape(x_dot))
+    # print("Xdot = ", type(x_dot), jp.shape(x_dot))
 
     # Initial a priori enclosure using the fixpoint formula
     iv_odt = Interval(0., dt)
     S = x + x_dot * iv_odt
-    print("S = ", type(S), jp.shape(S))
+    # print("S = ", type(S), jp.shape(S))
 
     # Prepare the loop
     def cond_fun(carry):
@@ -151,30 +147,24 @@ def DaTaReach(knowns, unknowns, H, x0, dt, actions,
     # Constant to not compute every time
     dt_2 = (0.5* dt**2)
 
-    num_actions = jp.shape(actions)[0]
-
     # Define the main body to compute the over-approximation
-    def op(xt, index):
-        # Over approximation of the control signal between t and t+dt
-        ut = actions[index, :]
-        ut_dt = actions[index, :]
-
+    def op(xt, act):
         # Compute the remainder term given the dynamics evaluation at t
-        St, _, fst_utdt = apriori_enclosure(knowns, unknowns, H, xt, ut_dt, dt,
+        St, _, fst_utdt = apriori_enclosure(knowns, unknowns, H, xt, act, dt,
             fixpointWidenCoeff, zeroDiameter, containTol, maxFixpointIter)
 
         # Compute the known term of the dynamics at t
-        fxt_ut = H(  xt, ut, knowns, unknowns)
+        fxt_ut = H(  xt, act, knowns, unknowns)
 
         # Define the dynamics function
-        dyn_fun = lambda x : H(x, ut_dt, knowns, unknowns)
+        dyn_fun = lambda x : H(x, act, knowns, unknowns)
 
         _, rem = jax.jvp(dyn_fun, (St,), (fst_utdt,))
         next_x = xt + dt * fxt_ut + dt_2 * rem
         return next_x, next_x
 
     # Scan over the operations to obtain the reachable set
-    _, res = jax.lax.scan(op, curr_x, jp.array(range(num_actions)))
+    _, res = jax.lax.scan(op, curr_x, xs=actions)
     return jp.vstack((curr_x,res))
 
 # Returns a list of states, starting with the initial state, of predicted states given the actions
@@ -187,9 +177,10 @@ def compute_trajectory_cost(actions, states, cost_function):
     # Carry is initially 0. Is incredemented by the cost for each state, action, next_state pair
     # Thus the result is the sum of costs at each timestep
     def compute_cost_of_SAS(carry, x):
-        carry += cost_function(states[x, :], actions[x, :], states[x, :])
+        state, action, next_state = x
+        carry += cost_function(state, action, next_state)
         return carry, 0
-    carry, _ = jax.lax.scan(compute_cost_of_SAS, 0, jp.array(range(jp.shape(actions)[0])))
+    carry, _ = jax.lax.scan(compute_cost_of_SAS, 0, (states[:-1], actions, states[1:]))
     return carry
 
 def predict_n_cost(actions, initial_state, knowns, unknowns, H, dt, cost_function):
@@ -202,16 +193,15 @@ def pick_actions(initial_state, look_ahead_steps, action_dims, knowns, unknowns,
     # init random? actions
     actions = jp.zeros((look_ahead_steps, action_dims))
 
-    def vanilla_gradient_descent(carry, x):
-        actions = carry
-        derivative_cost_wrt_actions = jax.jacfwd(predict_n_cost)(actions, initial_state, knowns, unknowns, H, dt, cost_function)
+    def vanilla_gradient_descent(acts, x):
+        derivative_cost_wrt_actions = jax.jacfwd(predict_n_cost)(acts, initial_state, knowns, unknowns, H, dt, cost_function)
 
         # descent
-        actions -= derivative_cost_wrt_actions * learning_rate
+        acts -= derivative_cost_wrt_actions * learning_rate
 
         # move back into bounds if needed
-        actions = jp.minimum(jp.maximum(actions, action_bounds_low), action_bounds_high)
-        return actions, 0
+        acts = jp.minimum(jp.maximum(acts, action_bounds_low), action_bounds_high)
+        return acts, 0
 
     actions, _ = jax.lax.scan(vanilla_gradient_descent, actions, jp.zeros((descent_steps, )))
 

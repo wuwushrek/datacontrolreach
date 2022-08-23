@@ -7,15 +7,17 @@ import numpy as np
 import jax
 import datacontrolreach.jumpy as jp
 from UnicycleMDP.UnicycleMDP import UnicycleMDP
-from datacontrolreach.HObject import HObject, inverse_contraction_B, inverse_contraction_C
+from datacontrolreach.HObject import HObject, inverse_contraction_B, inverse_contraction_C, init_HObject
 from datacontrolreach.LipschitzApproximator import LipschitzApproximator, init_LipschitzApproximator, approximate
 import time
 
 ############ User settings ##########
-known_dynamics = False
+known_dynamics = True
 look_ahead_steps = 10
 descent_steps = 1000
 learning_rate = 0.1
+render = False
+graph = False
 #####################################
 
 
@@ -55,7 +57,7 @@ if known_dynamics:
     unknown_approximations = []
     H = lambda x,u,known,unknown: known[0](x,u)
     contractions = []
-    h = HObject( env.observation_space.shape, env.action_space.shape, known_functions, unknown_approximations, H, contractions)
+    h = init_HObject( env.observation_space.shape, env.action_space.shape, known_functions, unknown_approximations, H, contractions)
 
 
 # define the cost function, which we will try to minimize
@@ -69,14 +71,16 @@ agent = DifferentialInclusionAgent(env.observation_space, env.action_space, h, e
 
 # reset env, begin looping
 observation, info = env.reset(seed=10, return_info=True)
-for _ in range(1000):
+for _ in range(100):
     # Get action from agent
     action = agent.act(observation)
 
     # for our sake
-    #future_states, future_actions = agent.get_future()  # fetch op, no computation
-    #env.render(predictions=future_states, sleep=1.0)
-    # env.plot(states)
+    if render:
+        future_states, future_actions = agent.get_future()  # fetch op, no computation
+        env.render(predictions=future_states, sleep=1.0)
+        if graph:
+            env.plot(future_states)
 
     # get result of action
     new_observation, reward, done, observation_dot = env.step(action)

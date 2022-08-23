@@ -21,15 +21,6 @@ class HObject(NamedTuple):
 
 def init_HObject(shape_x, shape_u, known_functions, unknown_approximations, H, contractions):
     assert len(contractions) == len(unknown_approximations), 'There must be 1 contraction per unknown approximation. Got {} unknown contractions and {} approximations'.format(len(unknown_approximations), len(contractions))
-    #self.shape_x = shape_x
-    #self.shape_u = shape_u
-    #self.known_functions = known_functions # must be a list of functions of X, U
-    #self.unknown_approximations = unknown_approximations # must be a list of LipschitzApproximators which take in X
-    #self.H = H # the function specifying how to calculate x dot
-               # Takes in inputs X,U and uses the known and unknown functions of X
-               # Its signature must be H(x,u,known,unknown) -> x_dot
-    #self.contractions = contractions # must be a list of functions taking in x,u,xdot,known, unknown, and returning
-                                     # a contraction of the output of unknown approximation[i] at value x
     return HObject(shape_x, shape_u, tuple(known_functions), tuple(unknown_approximations), H, tuple(contractions))
 
 # this functions needs to be overwritten by the end user. It needs to return an X dot from X and U by using the known functions
