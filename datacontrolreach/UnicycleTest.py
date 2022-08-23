@@ -12,7 +12,7 @@ from datacontrolreach.LipschitzApproximator import LipschitzApproximator, init_L
 import time
 
 ############ User settings ##########
-known_dynamics = True
+known_dynamics = False
 look_ahead_steps = 10
 descent_steps = 1000
 learning_rate = 0.1

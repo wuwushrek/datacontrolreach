@@ -47,15 +47,16 @@ def init_LipschitzApproximator(shapeOfInputs, shapeOfOutputs, lipschitzConstants
     return LipschitzApproximator(shapeOfInputs, shapeOfOutputs, lipschitzConstants, boundsOnFunctionValues, importanceWeights, x_data, f_x_data, max_data_size, 0)
 
 
-def approximate(LipschitzApproximator:LipschitzApproximator, x_to_predict):
-    # assert LipschitzApproximator.shapeOfInputs == x_to_predict.shape, 'x_to_predict size wrong. Expected {} , got {}\n'.format(LipschitzApproximator.shapeOfInputs, x_to_predict.shape)
-    return f_approximate(LipschitzApproximator.boundsOnFunctionValues,
-                         LipschitzApproximator.x_data,
-                         LipschitzApproximator.f_x_data,
-                         LipschitzApproximator.importanceWeights,
-                         LipschitzApproximator.lipschitzConstants,
-                         x_to_predict)
-
+def approximate(la:LipschitzApproximator, x_to_predict):
+    # assert la.shapeOfInputs == x_to_predict.shape, 'x_to_predict size wrong. Expected {} , got {}\n'.format(LipschitzApproximator.shapeOfInputs, x_to_predict.shape)
+    new_approximation =  f_approximate( la.boundsOnFunctionValues,
+                                         la.x_data,
+                                         la.f_x_data,
+                                         la.importanceWeights,
+                                         la.lipschitzConstants,
+                                         x_to_predict)
+    # assert new_approximation.shape == la.shapeOfOutputs, 'Shape of approximation must equal the output shape, got {} and {}, something went wrong'.format(new_approximation.shape, la.shapeOfOutputs)
+    return new_approximation
 def add_data(la:LipschitzApproximator, x, f_x: Interval):
     assert x.shape == la.shapeOfInputs,      'x size wrong. Expected {} , got {}\n'.format(la.shapeOfInputs, x.shape)
     assert f_x.shape == la.shapeOfOutputs,   'f_x size wrong. Expected {} , got {}\n'.format(la.shapeOfOutputs, f_x.shape)
@@ -107,7 +108,7 @@ def f_approximate(boundsOnFunctionValues, x_data, f_x_data, importanceWeights, l
         return f_x_bounds, 0
 
 
-    _, f_x_bounds = jax.lax.scan(calculate_new_bound_given_past_data, f_x_bounds, (x_data, f_x_data))
+    f_x_bounds, _ = jax.lax.scan(calculate_new_bound_given_past_data, f_x_bounds, (x_data, f_x_data))
 
     # after intersecting all bounds, return
     return f_x_bounds

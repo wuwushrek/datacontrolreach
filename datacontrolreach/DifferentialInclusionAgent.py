@@ -180,7 +180,7 @@ def compute_trajectory_cost(actions, states, cost_function):
         state, action, next_state = x
         carry += cost_function(state, action, next_state)
         return carry, 0
-    carry, _ = jax.lax.scan(compute_cost_of_SAS, 0, (states[:-1], actions, states[1:]))
+    carry, _ = jax.lax.scan(compute_cost_of_SAS, 0, (states[:-1, :], actions, states[1:, :]))
     return carry
 
 def predict_n_cost(actions, initial_state, knowns, unknowns, H, dt, cost_function):

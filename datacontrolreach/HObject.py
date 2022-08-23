@@ -36,10 +36,9 @@ def contract(hobject:HObject, x, u, x_dot):
     for index in range(len(hobject.contractions)):
         contracted_value = hobject.contractions[index](x,u,x_dot, hobject.known_functions, hobject.unknown_approximations)
         new_approximations.append(add_data(hobject.unknown_approximations[index], x, contracted_value))
-    new_approximations = tuple(new_approximations)
     return HObject(         hobject.shape_x, hobject.shape_u,
                             hobject.known_functions,
-                            new_approximations,
+                            tuple(new_approximations),
                             hobject.H,
                             hobject.contractions
                             )
@@ -73,9 +72,10 @@ def inverse_contraction_B(A, B_approx:Interval, C):
 # than a pseudo-inverse.
 # Given values for A, B and an estimate for C, we can contract the approximation for C
 def inverse_contraction_C(A, B, C_approx:Interval):
-    assert A.ndim == 1, 'A must be a vector, IE of size (N,)'
-    assert B.ndim == 2, 'B must be a Matrix, IE of size (N,M)'
-    assert C_approx.ndim == 1, 'C must be a vector, IE of size (M,)'
+    assert A.ndim == 1, 'A must be a vector, IE of size (N,). Got {}'.format(A.ndim)
+    assert B.ndim == 2, 'B must be a Matrix, IE of size (N,M). Got {}'.format(B.ndim)
+    assert C_approx.ndim == 1, 'C must be a vector, IE of size (M,). Got {}'.format(C_approx.ndim)
+    assert C_approx.shape[0] == B.shape[1], "C_approx size must be the same as the second dimension of B, got {} and {} respectively".format(C_approx.shape[0], B.shape[1])
     def row_wise(carry, x):
         a, b = x
         y = contract_row_wise(a, C_approx, b)
@@ -93,6 +93,7 @@ def inverse_contraction_C(A, B, C_approx:Interval):
 def contract_row_wise(dot_product, vector1: Interval, vector2):
     assert vector1.ndim == 1, 'vector1 must be a vector, IE of size (M,). Got {}'.format(vector1.ndim)
     assert vector2.ndim == 1, 'vector2 must be a vector, IE of size (M,). Got {}'.format(vector2.ndim)
+    assert vector1.size == vector2.size, 'vector1 and vector2 must have the same size. Got {} and {} respectively'.format(vector1.size, vector2.size)
     return hc4revise_lin_eq(dot_product, vector2, vector1)
 
 
