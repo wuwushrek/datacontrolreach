@@ -7,21 +7,20 @@ import numpy as np
 import jax
 import datacontrolreach.jumpy as jp
 from UnicycleMDP.UnicycleMDP import UnicycleMDP
-from datacontrolreach.HObject import HObject, inverse_contraction_B, inverse_contraction_C, init_HObject
+from datacontrolreach.HObject import HObject, inverse_contraction_B, inverse_contraction_C, init_HObject, get_x_dot
 from datacontrolreach.LipschitzApproximator import LipschitzApproximator, init_LipschitzApproximator, approximate
 import time
 
 ############ User settings ##########
 known_dynamics = False
-look_ahead_steps = 10
+look_ahead_steps = 3
 descent_steps = 1000
 learning_rate = 0.1
-render = False
+render = True
 graph = False
 #####################################
 
 
-# env = gym.make("Pendulum-v1")
 env = UnicycleMDP(seed = 2)
 print("Num states = ", env.observation_space.shape[0], ", Num actions = ",env.action_space.shape[0])
 
@@ -33,17 +32,27 @@ if not known_dynamics:
                                                  [ 0.0, 1.0, 0.0, 0.0, 0.0, u[0], u[1], 0.0, 0.0],
                                                  [ 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, u[0], u[1]]])
                        ]
+    # lipschitzConstants=jp.array([1.01, 1.01, 1.01, 1.1, 1.1, 1.1, 1.1, 1.01, 1.01]),
     unknown_approximations = [ init_LipschitzApproximator( shapeOfInputs=env.observation_space.shape, shapeOfOutputs=(k,),
-                                                          # lipschitzConstants=jp.array([1.01, 1.01, 1.01, 1.1, 1.1, 1.1, 1.1, 1.01, 1.01]),
                                                           lipschitzConstants=jp.array([0.01, 0.01, 0.01, 1.1, 1.1, 1.1, 1.1, 0.01, 0.01]),
                                                           boundsOnFunctionValues=Interval(jp.array([-10.0, -10.0, -10.0, -10.0, -10.0, -10.0, -10.0, -10.0,-10.0, ]),
                                                                                           jp.array([10.0,   10.0,  10.0,  10.0,  10.0,  10.0,  10.0,  10.0, 10.0])),
-                                                          max_data_size=100
+                                                          max_data_size=100,
+                                                         importanceWeights=jp.array([    [0.0, 0.0, 1.0],
+                                                                                         [0.0, 0.0, 1.0],
+                                                                                         [0.0, 0.0, 0.0],
+                                                                                         [0.0, 0.0, 1.0],
+                                                                                         [0.0, 0.0, 1.0],
+                                                                                         [0.0, 0.0, 1.0],
+                                                                                         [0.0, 0.0, 1.0],
+                                                                                         [0.0, 0.0, 0.0],
+                                                                                         [0.0, 0.0, 0.0]])
+
                                                         )
                              ]
     H = lambda x, u, known, unknown: known[0](x, u) + jp.matmul(known[1](x, u), approximate(unknown[0], x))
     contractions = [    lambda x, u, xdot, known, unknown: inverse_contraction_C(xdot - known[0](x, u), known[1](x, u), approximate(unknown[0], x))        ]
-    h = HObject( env.observation_space.shape, env.action_space.shape, known_functions, unknown_approximations, H, contractions)
+    h = init_HObject( env.observation_space.shape, env.action_space.shape, known_functions, unknown_approximations, H, contractions)
 
 # The case of all known transitions:
 if known_dynamics:
@@ -78,6 +87,14 @@ for _ in range(100):
     # for our sake
     if render:
         future_states, future_actions = agent.get_future()  # fetch op, no computation
+        # print(future_states)
+        if _ > 2:
+            x = future_states[0, :]
+            u = future_actions[0, :]
+            #print("Approx = ", approximate(agent.hobject.unknown_approximations[0], x))
+            #print("known ", agent.hobject.known_functions[1](  x, u))
+            #print("state dot = ", get_x_dot(agent.hobject,  x, u))
+
         env.render(predictions=future_states, sleep=1.0)
         if graph:
             env.plot(future_states)

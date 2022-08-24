@@ -65,7 +65,7 @@ class DifferentialInclusionAgent:
             return ret
 
     def control_theory(self, state):
-        actions, states = pick_actions(state, self.look_ahead_steps, self.number_actions, tuple(self.hobject.known_functions), self.hobject.unknown_approximations, self.hobject.H, self.dt, self.cost_function, self.descent_steps, self.learning_rate, self.action_space.low, self.action_space.high)
+        actions, states = pick_actions(state, self.look_ahead_steps, self.number_actions, self.hobject.known_functions, self.hobject.unknown_approximations, self.hobject.H, self.dt, self.cost_function, self.descent_steps, self.learning_rate, self.action_space.low, self.action_space.high)
         self.states_future = states
         self.actions_future = actions
         return actions[0, :] # returns the first action we have planned
@@ -87,7 +87,6 @@ def apriori_enclosure(knowns, unknowns, H, x, u_interval, dt, fixpointWidenCoeff
         :param
     """
     # First compute the vector field at the current pont
-    # x_dot = get_x_dot(hobject,  x, u_interval)
     x_dot = H(x, u_interval, knowns, unknowns)
     # print("Xdot = ", type(x_dot), jp.shape(x_dot))
 
@@ -148,7 +147,7 @@ def DaTaReach(knowns, unknowns, H, x0, dt, actions,
     dt_2 = (0.5* dt**2)
 
     # Define the main body to compute the over-approximation
-    def op(xt, act):
+    def DaTaReachLoop(xt, act):
         # Compute the remainder term given the dynamics evaluation at t
         St, _, fst_utdt = apriori_enclosure(knowns, unknowns, H, xt, act, dt,
             fixpointWidenCoeff, zeroDiameter, containTol, maxFixpointIter)
@@ -164,7 +163,7 @@ def DaTaReach(knowns, unknowns, H, x0, dt, actions,
         return next_x, next_x
 
     # Scan over the operations to obtain the reachable set
-    _, res = jax.lax.scan(op, curr_x, xs=actions)
+    _, res = jax.lax.scan(DaTaReachLoop, curr_x, xs=actions)
     return jp.vstack((curr_x,res))
 
 # Returns a list of states, starting with the initial state, of predicted states given the actions
@@ -188,7 +187,7 @@ def predict_n_cost(actions, initial_state, knowns, unknowns, H, dt, cost_functio
     costs = compute_trajectory_cost(actions, states, cost_function)
     return costs
 
-@partial(jax.jit, static_argnums=[1, 2, 3, 5, 7, 8, 9])
+# @partial(jax.jit, static_argnums=[1, 2, 3, 5, 7, 8, 9])
 def pick_actions(initial_state, look_ahead_steps, action_dims, knowns, unknowns, H, dt, cost_function, descent_steps, learning_rate, action_bounds_low, action_bounds_high):
     # init random? actions
     actions = jp.zeros((look_ahead_steps, action_dims))
