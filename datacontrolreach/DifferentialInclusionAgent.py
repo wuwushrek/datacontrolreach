@@ -6,13 +6,15 @@ from datacontrolreach.HObject import HObject, contract, init_HObject, get_x_dot
 import jax
 import random
 import jax.numpy as jnp
+from jax.experimental.host_callback import id_print
 import timeit
 from functools import partial
 class DifferentialInclusionAgent:
     """ A class to approximate a function given Lipschitz constants for each dimension and data in the form x, Interval of F(x)
     """
     # cost function should take in (x, u, x+1) and return a scalar cost. We will try to minimize this eventually.
-    def __init__(self, state_space, action_space, HObject, dt, cost_function, look_ahead_steps, descent_steps, learning_rate, exploration_steps = None):
+    def __init__(self, state_space, action_space, HObject, dt, cost_function, look_ahead_steps, descent_steps, learning_rate, exploration_steps = None, discount_rate = 1.0):
+        assert discount_rate <= 1.0
         self.number_states = state_space.shape[0]
         self.number_actions = action_space.shape[0]
         self.state_space = state_space   # maybe dont need this
@@ -27,6 +29,7 @@ class DifferentialInclusionAgent:
         self.learning_rate = learning_rate
         self.states_future = None
         self.actions_future = None
+        self.discount_rate = discount_rate
 
     # recall the equation is X_dot = (F_known(X) + F_unknown(X)) + (G_known(X) + G_unknown(X)) * U
     # therefore, F_unknown(X) = (X_dot - (G_known(X) + G_unknown(X)) * U) - F_known(X)
@@ -65,7 +68,7 @@ class DifferentialInclusionAgent:
             return ret
 
     def control_theory(self, state):
-        actions, states = pick_actions(state, self.look_ahead_steps, self.number_actions, self.hobject.known_functions, self.hobject.unknown_approximations, self.hobject.H, self.dt, self.cost_function, self.descent_steps, self.learning_rate, self.action_space.low, self.action_space.high)
+        actions, states = pick_actions(state, self.look_ahead_steps, self.number_actions, self.hobject.known_functions, self.hobject.unknown_approximations, self.hobject.H, self.dt, self.cost_function, self.discount_rate, self.descent_steps, self.learning_rate, self.action_space.low, self.action_space.high)
         self.states_future = states
         self.actions_future = actions
         return actions[0, :] # returns the first action we have planned
@@ -106,7 +109,7 @@ def apriori_enclosure(knowns, unknowns, H, x, u_interval, dt, fixpointWidenCoeff
 
         # Width increment step
         width_pasS = _pastS.width
-        radIncr = jp.where( width_pasS <= zeroDiameter, jp.abs(_pastS.ub), width_pasS) * fixpointWidenCoeff
+        radIncr = jp.where( width_pasS <= zeroDiameter, abs(_pastS).ub, width_pasS) * fixpointWidenCoeff
         # CHeck if the fixpoint condition is satisfied
         isIn = _pastS.contains(_newS, tol=containTol)
         _pastS = jp.where(isIn, _newS, _newS + Interval(-radIncr,radIncr))
@@ -149,8 +152,7 @@ def DaTaReach(knowns, unknowns, H, x0, dt, actions,
     # Define the main body to compute the over-approximation
     def DaTaReachLoop(xt, act):
         # Compute the remainder term given the dynamics evaluation at t
-        St, _, fst_utdt = apriori_enclosure(knowns, unknowns, H, xt, act, dt,
-            fixpointWidenCoeff, zeroDiameter, containTol, maxFixpointIter)
+        St, _, fst_utdt = apriori_enclosure(knowns, unknowns, H, xt, act, dt, fixpointWidenCoeff, zeroDiameter, containTol, maxFixpointIter)
 
         # Compute the known term of the dynamics at t
         fxt_ut = H(  xt, act, knowns, unknowns)
@@ -158,7 +160,10 @@ def DaTaReach(knowns, unknowns, H, x0, dt, actions,
         # Define the dynamics function
         dyn_fun = lambda x : H(x, act, knowns, unknowns)
 
+        #St = xt
+        #fst_utdt = fxt_ut
         _, rem = jax.jvp(dyn_fun, (St,), (fst_utdt,))
+        # rem = 0
         next_x = xt + dt * fxt_ut + dt_2 * rem
         return next_x, next_x
 
@@ -172,31 +177,46 @@ def predict_n_states(initial_state, actions, knowns, unknowns, H, dt):
         states = DaTaReach(knowns, unknowns, H, initial_state, dt, actions)
         return states
 
-def compute_trajectory_cost(actions, states, cost_function):
+def compute_trajectory_cost(actions, states, cost_function, discount_rate):
     # Carry is initially 0. Is incredemented by the cost for each state, action, next_state pair
     # Thus the result is the sum of costs at each timestep
     def compute_cost_of_SAS(carry, x):
         state, action, next_state = x
-        carry += cost_function(state, action, next_state)
-        return carry, 0
-    carry, _ = jax.lax.scan(compute_cost_of_SAS, 0, (states[:-1, :], actions, states[1:, :]))
-    return carry
+        total_cost, discount = carry
+        total_cost += cost_function(state, action, next_state)
+        return (total_cost, discount * discount_rate), 0
+    carry, _ = jax.lax.scan(compute_cost_of_SAS, (0.0, 1.0), (states[:-1, :], actions, states[1:, :])) # todo carry interavl ro scalar?
+    return carry[0]
 
-def predict_n_cost(actions, initial_state, knowns, unknowns, H, dt, cost_function):
+def predict_n_cost(actions, initial_state, knowns, unknowns, H, dt, cost_function, discount_rate):
     states = predict_n_states(initial_state, actions,  knowns, unknowns, H, dt)
-    costs = compute_trajectory_cost(actions, states, cost_function)
+    costs = compute_trajectory_cost(actions, states, cost_function, discount_rate)
     return costs
 
-# @partial(jax.jit, static_argnums=[1, 2, 3, 5, 7, 8, 9])
-def pick_actions(initial_state, look_ahead_steps, action_dims, knowns, unknowns, H, dt, cost_function, descent_steps, learning_rate, action_bounds_low, action_bounds_high):
+# @partial(jax.jit, static_argnums=[1, 2, 3, 5, 7, 9, 10])
+def pick_actions(initial_state, look_ahead_steps, action_dims, knowns, unknowns, H, dt, cost_function, discount_rate, descent_steps, learning_rate, action_bounds_low, action_bounds_high):
     # init random? actions
     actions = jp.zeros((look_ahead_steps, action_dims))
 
     def vanilla_gradient_descent(acts, x):
-        derivative_cost_wrt_actions = jax.jacfwd(predict_n_cost)(acts, initial_state, knowns, unknowns, H, dt, cost_function)
+        # for some reason this returns a tuple???????????
+        derivative_cost_wrt_actions = jax.jacfwd(predict_n_cost)(acts, initial_state, knowns, unknowns, H, dt, cost_function, discount_rate)
+
+        # cost = predict_n_cost(acts, initial_state, knowns, unknowns, H, dt, cost_function, discount_rate)
+        # id_print(cost)
 
         # descent
-        acts -= derivative_cost_wrt_actions * learning_rate
+        # print("deriv = ", type(derivative_cost_wrt_actions), derivative_cost_wrt_actions.shape)
+         #print("acts = ", type(acts), acts.shape)
+        # id_print(derivative_cost_wrt_actions)
+        #a = 0.3
+        #der = derivative_cost_wrt_actions.lb * a + derivative_cost_wrt_actions.ub * (1.0-a)
+        #acts -= der * learning_rate
+        acts -= derivative_cost_wrt_actions * learning_rate # TODO mid
+
+        #id_print(acts)
+        # id_print(derivative_cost_wrt_actions)
+        #id_print(cost)
 
         # move back into bounds if needed
         acts = jp.minimum(jp.maximum(acts, action_bounds_low), action_bounds_high)

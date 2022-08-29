@@ -50,7 +50,7 @@ class UnicycleMDP(gym.Env):
       # get random initial state
       self.state = np.array([random.uniform(-5.0, 5.0),
                              random.uniform(-5.0, 5.0),
-                             random.uniform(0.0, 2.0 * math.pi)])
+                             random.uniform(-math.pi, math.pi)])
       self.t = 0.0
 
       # return observation
@@ -80,6 +80,9 @@ class UnicycleMDP(gym.Env):
       # reward is just negative distance to destination
       reward = -self.distance_to_destination()
       self.t += self.dt
+
+      self.state[2] = self.state[2] % (2 * math.pi)
+      self.state[2] = self.state[2] if self.state[2] < math.pi else self.state[2] - math.pi * 2
 
       return self.state, reward, self.is_terminated(), self.state_dot # info = state dot in this case
 

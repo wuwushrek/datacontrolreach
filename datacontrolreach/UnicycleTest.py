@@ -1,6 +1,6 @@
 import math
 
-from datacontrolreach.DifferentialInclusionAgent import DifferentialInclusionAgent
+from datacontrolreach.DifferentialInclusionAgent import DifferentialInclusionAgent, DaTaReach, predict_n_states
 from datacontrolreach.interval import Interval
 import gym
 import numpy as np
@@ -13,7 +13,7 @@ import time
 
 ############ User settings ##########
 known_dynamics = False
-look_ahead_steps = 3
+look_ahead_steps = 10
 descent_steps = 1000
 learning_rate = 0.1
 render = True
@@ -21,7 +21,7 @@ graph = False
 #####################################
 
 
-env = UnicycleMDP(seed = 2)
+env = UnicycleMDP(seed = 4)
 print("Num states = ", env.observation_space.shape[0], ", Num actions = ",env.action_space.shape[0])
 
 # Create an HObject which can predict the next_state_dot.s Can take advantage of any known information
@@ -34,19 +34,19 @@ if not known_dynamics:
                        ]
     # lipschitzConstants=jp.array([1.01, 1.01, 1.01, 1.1, 1.1, 1.1, 1.1, 1.01, 1.01]),
     unknown_approximations = [ init_LipschitzApproximator( shapeOfInputs=env.observation_space.shape, shapeOfOutputs=(k,),
-                                                          lipschitzConstants=jp.array([0.01, 0.01, 0.01, 1.1, 1.1, 1.1, 1.1, 0.01, 0.01]),
+                                                          lipschitzConstants=jp.array([0.00, 0.00, 0.00, 1.0, 0.0, 1.0, 0.0, 0.00, 0.00]),
                                                           boundsOnFunctionValues=Interval(jp.array([-10.0, -10.0, -10.0, -10.0, -10.0, -10.0, -10.0, -10.0,-10.0, ]),
                                                                                           jp.array([10.0,   10.0,  10.0,  10.0,  10.0,  10.0,  10.0,  10.0, 10.0])),
                                                           max_data_size=100,
                                                          importanceWeights=jp.array([    [0.0, 0.0, 1.0],
                                                                                          [0.0, 0.0, 1.0],
-                                                                                         [0.0, 0.0, 0.0],
                                                                                          [0.0, 0.0, 1.0],
                                                                                          [0.0, 0.0, 1.0],
                                                                                          [0.0, 0.0, 1.0],
                                                                                          [0.0, 0.0, 1.0],
-                                                                                         [0.0, 0.0, 0.0],
-                                                                                         [0.0, 0.0, 0.0]])
+                                                                                         [0.0, 0.0, 1.0],
+                                                                                         [0.0, 0.0, 1.0],
+                                                                                         [0.0, 0.0, 1.0]])
 
                                                         )
                              ]
@@ -71,12 +71,13 @@ if known_dynamics:
 
 # define the cost function, which we will try to minimize
 def cost_function (x, u, x_future):
-    cost =  x_future[0] ** 2 + x_future[1] ** 2 # x^2 + y^2, minimal = go to 0,0
-    return cost.ub
+    cost =  x_future[0] ** 2 + x_future[1] ** 2 # + 0.1 * u[1]**2 # + (u[1] ** 2)/1000.0# x^2 + y^2, minimal = go to 0,0
+    return cost.mid
 
 
 # create agent with any side info we may need
-agent = DifferentialInclusionAgent(env.observation_space, env.action_space, h, env.dt, cost_function, look_ahead_steps=look_ahead_steps, descent_steps=descent_steps, learning_rate=learning_rate)
+agent = DifferentialInclusionAgent(env.observation_space, env.action_space, h, env.dt, cost_function, look_ahead_steps=look_ahead_steps, descent_steps=descent_steps,
+                                                                                                    learning_rate=learning_rate, discount_rate=0.9)
 
 # reset env, begin looping
 observation, info = env.reset(seed=10, return_info=True)
@@ -88,14 +89,29 @@ for _ in range(100):
     if render:
         future_states, future_actions = agent.get_future()  # fetch op, no computation
         # print(future_states)
-        if _ > 2:
-            x = future_states[0, :]
-            u = future_actions[0, :]
-            #print("Approx = ", approximate(agent.hobject.unknown_approximations[0], x))
-            #print("known ", agent.hobject.known_functions[1](  x, u))
-            #print("state dot = ", get_x_dot(agent.hobject,  x, u))
+        # if _ > 100:
+        #     x = observation
+        #
+        #     # do nothing
+        #     actions = jp.zeros((10,2))
+        #     future_states = predict_n_states(x, actions, agent.hobject.known_functions, agent.hobject.unknown_approximations, agent.hobject.H, agent.dt)
+        #     env.render(predictions=future_states, sleep=3.0)
+        #
+        #     actions = jp.array([[3,0],[3,0],[3,0],[3,0],[3,0],[3,0],[3,0],[3,0],[3,0],[3,0]])
+        #     future_states = predict_n_states(x, actions, agent.hobject.known_functions, agent.hobject.unknown_approximations, agent.hobject.H, agent.dt)
+        #     env.render(predictions=future_states, sleep=3.0)
+        #
+        #     #
+        #     actions = jp.array([[3,3],[3,3],[3,3],[3,3],[3,3],[3,0],[3,0],[3,0],[3,0],[3,0]])
+        #     future_states = predict_n_states(x, actions, agent.hobject.known_functions, agent.hobject.unknown_approximations, agent.hobject.H, agent.dt)
+        #     env.render(predictions=future_states, sleep=3.0)
+        #
+        #     actions = jp.array([[3,-3],[3,-3],[3,-3],[3,-3],[3,-3],[3,0],[3,0],[3,0],[3,0],[3,0]])
+        #     future_states = predict_n_states(x, actions, agent.hobject.known_functions, agent.hobject.unknown_approximations, agent.hobject.H, agent.dt)
+        #     env.render(predictions=future_states, sleep=3.0)
 
-        env.render(predictions=future_states, sleep=1.0)
+
+        env.render(predictions=future_states, sleep=0.01)
         if graph:
             env.plot(future_states)
 

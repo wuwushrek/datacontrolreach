@@ -121,5 +121,5 @@ def jvp_f_approximate(boundsOnFunctionValues, x_data, f_x_data, importanceWeight
     x_to_predict, = primal
     x_to_predict_dot, = tangents
     value = f_approximate(boundsOnFunctionValues, x_data, f_x_data, importanceWeights, lipschitzConstants, x_to_predict)
-    derivative = jp.matmul(importanceWeights, x_to_predict_dot) * lipschitzConstants * Interval(-1.0, 1.0)
+    derivative = jp.matmul(importanceWeights, x_to_predict_dot) * lipschitzConstants * Interval(-1.0, 1.0) # TODO needed or not
     return value, derivative
