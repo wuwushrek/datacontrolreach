@@ -1,125 +1,212 @@
- # has to go in this order because of circular dependencies....
-import copy
-
-import numpy as np
-import datacontrolreach.jumpy as jp
-from datacontrolreach import interval
-from datacontrolreach.interval import Interval
 import jax
+import jax.numpy as jnp
+
+import datacontrolreach.jumpy as jp
+from datacontrolreach.jumpy import Interval
+
 from functools import partial
+
 from typing import NamedTuple
 
-# A class representing a function approximator which uses Lipschitz constants to bound a function output
+from jax.experimental.host_callback import id_print
+
+# Define a maximum value for function bounds
+MAX_FUNCTION_BOUNDS = 1e6
+
 class LipschitzApproximator(NamedTuple):
-    shapeOfInputs:tuple                 # Tuple of the input shape
-    shapeOfOutputs:tuple                # tuple of the output shape
-
-    lipschitzConstants:jp.array         # Lipschitz constants with respect to the outputs.
-    boundsOnFunctionValues:Interval     # Bounds the possible outputs of the function with respect to each output
-    importanceWeights:jp.array          # How important each input is with respect to outputs. Must of shape outputs x inputs
-
-    x_data:jp.array                     # Data we have collected on the function. This is input records
-    f_x_data:Interval                   # Data we have collected on the function. This is output estimates via intervals
-
-    max_data_size:int                   # Max data we can collect. This must be limited for jax to work
-    current_index:int                   # Record keeping for updating new data.
-
-
-def init_LipschitzApproximator(shapeOfInputs, shapeOfOutputs, lipschitzConstants, max_data_size:int, boundsOnFunctionValues:Interval = None, importanceWeights = None):
-    # check shapes to make sure everything is compatible
-
-    assert shapeOfOutputs == lipschitzConstants.shape, 'Shape of outputs {} does not match shape of Lipschitz constants {}\n'.format(shapeOfOutputs, jp.shape(lipschitzConstants))
-    assert boundsOnFunctionValues is None or shapeOfOutputs == boundsOnFunctionValues.shape, 'Bounds on function values must match the output shape. Got {} shape for bounds, {} for outputs'.format(boundsOnFunctionValues.shape, shapeOfOutputs)
-    assert importanceWeights is None or (shapeOfOutputs + shapeOfInputs) == importanceWeights.shape, 'Importance weights shape must be MxN, where is M is the output shape and N is the input shape. Got {} for shape, expected {}'.format(importanceWeights.shape, (shapeOfOutputs + shapeOfInputs))
-
-    # Assume some large function bounds if not provided. Do not assume infinity, even though its mathematically better, because it causes NaN
-    boundsOnFunctionValues = boundsOnFunctionValues if boundsOnFunctionValues is not None else Interval(jp.full(shapeOfOutputs, -1e6), jp.full(shapeOfOutputs, 1e6))
-    importanceWeights = importanceWeights if importanceWeights is not None else jp.ones(shapeOfOutputs + shapeOfInputs)
-
-    # Initially we are empty of data. So we make it all 0's for inputs, outputs will be max values so we dont affect predictions
-    x_data = jp.zeros((max_data_size,) + shapeOfInputs)
-    f_x_data = Interval(jp.zeros((0, ) + shapeOfOutputs ))
-    for i in range(max_data_size):
-        f_x_data =   jp.vstack( (f_x_data,  jp.reshape(boundsOnFunctionValues, (1,) + shapeOfOutputs)))
-
-    assert f_x_data.shape == (max_data_size, ) + shapeOfOutputs
-
-    return LipschitzApproximator(shapeOfInputs, shapeOfOutputs, lipschitzConstants, boundsOnFunctionValues, importanceWeights, x_data, f_x_data, max_data_size, 0)
+    """ A class representing a function approximator which uses Lipschitz
+        constants and data to bound a function output
+        Attributes:
+        lipschitzConstants      : Lipschitz constants with respect to the outputs.
+        boundsOnFunctionValues  : Bounds the possible outputs of the function with
+                                    respect to each output
+        importanceWeights       : How important each input is with respect to outputs.
+                                    Must be of the same shape as the state of the system
+        xData                   : Data we have collected on the function.
+                                    This is input records
+        fxData                  : Data we have collected on the function.
+                                    This is output estimates via intervals
+        currentIndex            : Where to add new data. Record keeping for updating new data.
+    """
+    lipschitzConstants: jnp.ndarray
+    boundsOnFunctionValues: Interval
+    importanceWeights: jnp.ndarray
+    xData: jnp.ndarray
+    fxData: Interval
+    currentIndex: jnp.ndarray
 
 
-def approximate(la:LipschitzApproximator, x_to_predict):
-    # assert la.shapeOfInputs == x_to_predict.shape, 'x_to_predict size wrong. Expected {} , got {}\n'.format(LipschitzApproximator.shapeOfInputs, x_to_predict.shape)
-    new_approximation =  f_approximate( la.boundsOnFunctionValues,
-                                         la.x_data,
-                                         la.f_x_data,
-                                         la.importanceWeights,
-                                         la.lipschitzConstants,
-                                         x_to_predict)
-    # assert new_approximation.shape == la.shapeOfOutputs, 'Shape of approximation must equal the output shape, got {} and {}, something went wrong'.format(new_approximation.shape, la.shapeOfOutputs)
-    return new_approximation
-def add_data(la:LipschitzApproximator, x, f_x: Interval):
-    assert x.shape == la.shapeOfInputs,      'x size wrong. Expected {} , got {}\n'.format(la.shapeOfInputs, x.shape)
-    assert f_x.shape == la.shapeOfOutputs,   'f_x size wrong. Expected {} , got {}\n'.format(la.shapeOfOutputs, f_x.shape)
+def init_LipschitzApproximator(lipschitzConstants, maxDataSize:int, numStates:int,
+                                boundsOnFunctionValues:Interval = None,
+                                importanceWeights = None):
+    """A wrapper for initializing a LipschitzApproximator instance
 
-    index = la.current_index
-    x_data = la.x_data.at[index, :].set(x)
-    f_x_data = Interval(la.f_x_data.lb.at[index, :].set(f_x.lb),
-                        la.f_x_data.ub.at[index, :].set(f_x.ub))
-    new_index = (index + 1) % la.max_data_size
+    Args:
+        lipschitzConstants (TYPE): Lipschitz constants with respect to the outputs.
+        maxDataSize (int): The maximum size of the data buffer
+        numStates (int): Description
+        boundsOnFunctionValues (Interval, optional): Bounds the possible outputs of the functions
+        importanceWeights (None, optional): How important each input is with respect to outputs.
 
-    return LipschitzApproximator(la.shapeOfInputs, la.shapeOfOutputs,
-                                 la.lipschitzConstants,
-                                 la.boundsOnFunctionValues,
-                                 la.importanceWeights,
-                                 x_data, f_x_data,
-                                 la.max_data_size, new_index)
+    Returns:
+        TYPE: LipschitzApproximator
+    """
+    # Define the number of unknown terms
+    lipschitzConstants = jp.array(lipschitzConstants)
+    shapeOfOutputs = lipschitzConstants.shape
 
-# Note I have to pull this function out of the class because Jax cannot jit or differentiate class methods
-# So we pull the function out, and call it from the class
-@partial(jax.custom_jvp, nondiff_argnums=(0,1,2,3,4))
-def f_approximate(boundsOnFunctionValues, x_data, f_x_data, importanceWeights, lipschitzConstants, x_to_predict):
+    # Assume some large function bounds if not provided.
+    # Do not assume infinity, even though its mathematically better, because it causes NaN
+    if boundsOnFunctionValues is None:
+        boundsOnFunctionValues = Interval(lb = jnp.full(shapeOfOutputs, -MAX_FUNCTION_BOUNDS),
+                                          ub = jnp.full(shapeOfOutputs, MAX_FUNCTION_BOUNDS)
+                                        )
+    else:
+        flb = jnp.array([bo[0] for bo in boundsOnFunctionValues ])
+        fub = jnp.array([bo[1] for bo in boundsOnFunctionValues ])
+        boundsOnFunctionValues = Interval(flb, fub)
+
+    # If the importance weights is not given, assume the unknown functions
+    # depend on every state variables of the system
+    if importanceWeights is None:
+        importanceWeights = jnp.ones((shapeOfOutputs[0], numStates))
+    else:
+        importanceWeights = jnp.array(importanceWeights)
+
+    # Initially we are empty of data.
+    # So we make it all 0's for inputs,
+    # outputs will be max values so we dont affect predictions
+    xData = jp.zeros((maxDataSize, numStates))
+    fxData = jp.block_array([boundsOnFunctionValues for _ in range(maxDataSize)])
+
+    return LipschitzApproximator(lipschitzConstants = lipschitzConstants,
+                                boundsOnFunctionValues = boundsOnFunctionValues,
+                                importanceWeights = importanceWeights,
+                                xData = xData, fxData = fxData,
+                                currentIndex = jnp.array(0))
+
+
+def add_data(la:LipschitzApproximator, x, fx: Interval):
+    """Summary
+
+    Args:
+        la (LipschitzApproximator): A Lipschitz-Based approximator
+        x (TYPE): A state value
+        fx (Interval): An estimate of the unknown function at that state
+
+    Returns:
+        TYPE: An update LipschitzApproximator
+    """
+
+    index = la.currentIndex
+    xData = la.xData.at[index, :].set(x)
+    fxData = jp.index_update(la.fxData, index, fx)
+    newIndex = (index + 1) % la.xData.shape[0]
+    return la._replace(xData=xData, fxData=fxData, currentIndex=newIndex)
+
+
+
+# @partial(jax.custom_jvp, nondiff_argnums=(0,))
+@jax.custom_jvp
+def approximate(la: LipschitzApproximator, xToPredict):
+    """Given a LipschitzApproximator object, this function provides an estimate
+        of the vector field at the given state xToPredict
+
+    Args:
+        la (LipschitzApproximator): A Lipschitz-Based approximator
+        xToPredict (TYPE): The state for which we want to predict function values
+
+    Returns:
+        TYPE: Over-approximation of the function values at the given state
+    """
     # initial bound is -inf, inf or whatever the user sets
-    f_x_bounds = Interval(jp.array(boundsOnFunctionValues.lb), jp.array(boundsOnFunctionValues.ub))
+    fxBounds = Interval(la.boundsOnFunctionValues)
 
-    # for each data point, find bound based on lipschitz constants. Then find intersection
-    def calculate_new_bound_given_past_data(f_x_bounds, xs):
-        x, f_x = xs
+    # for each data point, find bound based on lipschitz constants.
+    # Then find intersection
+    def calculate_new_bound_given_past_data(fxBound, xs):
+        x, fx = xs
 
-        difference_x = x - x_to_predict
+        differenceX = x - xToPredict
 
-        # this process calculates the norm of the difference in X of the data and the X we are trying to predict
-        # first we (elementwise) square the distance (norm 2)
-        normed_difference_x = difference_x ** 2
+        # This process computes the norm of the difference in X of the data
+        # and the X we are trying to predict
 
-        # then we multiply by the importance weights of every output with respect to every input. This outputs a distance with respect to each output
-        weighted_distances = jp.matmul(importanceWeights, normed_difference_x)
+        # First elementwise square the difference to the x to predict
+        normedDifferenceX = differenceX ** 2
 
-        # then we have to undo the (elementwise) power operation from above, sqrt in the case of norm 2
-        normed_weighted_distances = jp.sqrt(weighted_distances)
+        # Then we multiply by the importance weights of every output with respect to every input.
+        # This outputs a distance with respect to each output
+        weightedDistances = jp.matmul(la.importanceWeights, normedDifferenceX)
 
-        # elementwise multiply the distance by the lipschitz constant to get a bound on how much the function value could possibly change. It is shaped like a cone.
-        # possible_change_output = jp.multiply(lipschitzConstants, normed_weighted_distances)
-        possible_change_output = lipschitzConstants * normed_weighted_distances
+        # Then we have to undo the (elementwise) power operation from above, sqrt in the case of norm 2
+        normedWeightedDistances = jp.sqrt(weightedDistances)
+
+        # Elementwise multiply the distance by the lipschitz constant to get a bound
+        # on how much the function value could possibly change. It is shaped like a cone.
+        possibleChangeOutput = la.lipschitzConstants * normedWeightedDistances
+
         # cone = jp.multiply(Interval(-1.0, 1.0), possible_change_output)
-        cone = Interval(-1.0, 1.0) * possible_change_output
+        cone = Interval(-1.0, 1.0) * possibleChangeOutput
 
-        bound = f_x + cone  # add the prediction at this point + the cone generated by X distance * lipschitz to get a bound
-        f_x_bounds = bound & f_x_bounds  # finds the intersection of current bound and bound generated by this datapoint
-        return f_x_bounds, 0
+        # Add the prediction at this point + the cone generated by X distance * lipschitz to get a bound
+        bound = fx + cone
 
+        # finds the intersection of current bound and bound generated by this datapoint
+        fxBound = bound & fxBound
 
-    f_x_bounds, _ = jax.lax.scan(calculate_new_bound_given_past_data, f_x_bounds, (x_data, f_x_data))
+        return fxBound, None
 
-    # after intersecting all bounds, return
-    return f_x_bounds
+    # Proceed to intersecting all bounds and return the resul
+    fxBounds, _ = jax.lax.scan(calculate_new_bound_given_past_data, fxBounds, (la.xData, la.fxData))
+    return fxBounds
 
+@approximate.defjvp
+def jvp_approximate(primal, tangents):
+    """Compute the gradient of approximate. We cannot find the derivative at x.
+       However, we do know the Lipschitz constant so the derivative is between
+       -Lipschitz and +Lipschitz and we return that
 
-# We cannot find the derivative at x. However, we do know the Lipschitz constant, so the derivative is between -Lipschitz and +Lipschitz
-# so we can return that
-@f_approximate.defjvp
-def jvp_f_approximate(boundsOnFunctionValues, x_data, f_x_data, importanceWeights, lipschitzConstants, primal, tangents):
-    x_to_predict, = primal
-    x_to_predict_dot, = tangents
-    value = f_approximate(boundsOnFunctionValues, x_data, f_x_data, importanceWeights, lipschitzConstants, x_to_predict)
-    derivative = jp.matmul(importanceWeights, x_to_predict_dot) * lipschitzConstants * Interval(-1.0, 1.0)
+    Args:
+        la (LipschitzApproximator): A Lipschitz-Based approximator
+        primal (TYPE): The primal variale for jvp computation
+        tangents (TYPE): The tangent variable for jbp computation
+
+    Returns:
+        TYPE: Tuple (value, and grad * tangent)
+    """
+    # Extract the x used for computing approximate
+    la, xToPredict = primal
+    # Extract the tangent variable
+    _, xToPredictDot = tangents
+    # Approximate the unknown functions at xToPredict
+    value = approximate(la, xToPredict)
+    # Now the jvp is simply defined as described in the function definition
+    derivative = jp.matmul(la.importanceWeights, xToPredictDot) \
+                    * la.lipschitzConstants * Interval(-1.0, 1.0)
     return value, derivative
+
+# # @approximate.defjvp
+# def jvp_approximate(la: LipschitzApproximator, primal, tangents):
+#     """Compute the gradient of approximate. We cannot find the derivative at x.
+#        However, we do know the Lipschitz constant so the derivative is between
+#        -Lipschitz and +Lipschitz and we return that
+
+#     Args:
+#         la (LipschitzApproximator): A Lipschitz-Based approximator
+#         primal (TYPE): The primal variale for jvp computation
+#         tangents (TYPE): The tangent variable for jbp computation
+
+#     Returns:
+#         TYPE: Tuple (value, and grad * tangent)
+#     """
+#     # Extract the x used for computing approximate
+#     xToPredict, = primal
+#     # Extract the tangent variable
+#     xToPredictDot, = tangents
+#     # Approximate the unknown functions at xToPredict
+#     value = approximate(la, xToPredict)
+#     # Now the jvp is simply defined as described in the function definition
+#     derivative = jp.matmul(la.importanceWeights, xToPredictDot) \
+#                     * la.lipschitzConstants * Interval(-1.0, 1.0)
+#     return value, derivative

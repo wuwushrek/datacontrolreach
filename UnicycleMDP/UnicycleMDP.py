@@ -5,7 +5,6 @@ from gym import spaces
 
 import numpy as np
 import math
-import random
 from typing import Optional
 from os import path
 from gym.envs.classic_control import rendering
@@ -40,7 +39,7 @@ class UnicycleMDP(gym.Env):
     self.viewer = None
 
     # seed random for reproducibility, and reset to a random state
-    random.seed(seed)
+    np.random.seed(seed)
     self.reset()
 
   # resets to a random state, sets t to 0 again
@@ -48,9 +47,9 @@ class UnicycleMDP(gym.Env):
       # random.seed(seed)
 
       # get random initial state
-      self.state = np.array([random.uniform(-5.0, 5.0),
-                             random.uniform(-5.0, 5.0),
-                             random.uniform(0.0, 2.0 * math.pi)])
+      self.state = np.array([np.random.uniform(-5.0, 5.0),
+                             np.random.uniform(-5.0, 5.0),
+                             np.random.uniform(0, 2.0 * math.pi)])
       self.t = 0.0
 
       # return observation
@@ -76,6 +75,8 @@ class UnicycleMDP(gym.Env):
       # update state and state dot
       self.state_dot = f + np.matmul(g, action)
       self.state = self.state + self.state_dot * self.dt
+
+      self.state[-1] = self.state[-1] % (2 * math.pi)
 
       # reward is just negative distance to destination
       reward = -self.distance_to_destination()

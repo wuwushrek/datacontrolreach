@@ -22,10 +22,14 @@ class Interval:
         """
         # If lb is already an interval
         if isinstance(lb, Interval):
-            self._lb = lb.lb
-            self._ub = lb.ub
+            self._lb = jnp.array(lb.lb)
+            self._ub = jnp.array(lb.ub)
         else:
             # TODO : Do not copy ndarray here, use the correct value
+            # lb = lb if hasattr(lb, 'shape') else jnp.array(lb)
+            # ub = ub if (ub is None or hasattr(ub, 'shape')) else jnp.array(ub)
+            # self._lb = lb
+            # self._ub = ub if ub is not None else lb
             self._lb = jnp.array(lb, dtype=float)
             self._ub = jnp.array(ub, dtype=float) if ub is not None else jnp.array(lb, dtype=float) # No need for deep copy as it is done by jnp and the constructor is pure
 
@@ -286,15 +290,22 @@ class Interval:
         return self._ub
 
     def __repr__(self):
+        base_str = 'iv[{},{}]' if isinstance(self._lb, jax.core.Tracer) else 'iv[{:.5f},{:.5f}]'
         if len(self.shape) == 0:
-            return 'iv[{:.6f},{:.6f}]'.format(self._lb, self._ub)
+            return base_str.format(self._lb, self._ub)
         if len(self.shape) == 1:
-            return '[{}]'.format(','.join('iv[{:.7f},{:.7f}]'.format(lb, ub) for lb, ub in zip(self._lb, self._ub) ))
+            return '[{}]'.format(','.join('iv[{},{}]'.format(lb, ub) for lb, ub in zip(self._lb, self._ub) ))
         if len(self.shape) == 2:
-            return '[{}]'.format('\n'.join(' '.join(['iv[{:.6f},{:.6f}]'.format(__lb,__ub) for __lb,__ub in zip(_lb,_ub)]) \
-                                    for _lb, _ub in zip(self._lb, self._ub)))
+            s = [[base_str.format(__lb,__ub) for __lb,__ub in zip(_lb,_ub)] \
+                    for (_lb, _ub) in zip(self._lb, self._ub)]
+            lens = [max(map(len, col)) for col in zip(*s)]
+            fmt = ', '.join('{{:{}}}'.format(x) for x in lens) # \t
+            table = ['[{}]'.format(fmt.format(*row)) for row in s]
+            return '[{}]'.format('\n'.join(table))
+            # return '[{}]'.format('\n'.join(' '.join(['iv[{:.6f},{:.6f}]'.format(__lb,__ub) for __lb,__ub in zip(_lb,_ub)]) \
+            #                         for _lb, _ub in zip(self._lb, self._ub)))
         else:
-            return 'Interval[{}]'.format(','.join('({:.6f},{:.6f})'.format(lb, ub) for lb, ub in zip(self._lb.ravel(), self._ub.ravel()) ))
+            return 'Interval[{}]'.format(','.join('({},{})'.format(lb, ub) for lb, ub in zip(self._lb.ravel(), self._ub.ravel()) ))
 
     @classmethod
     def restore(cls, x, y):

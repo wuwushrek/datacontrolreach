@@ -16,6 +16,7 @@ X = TypeVar('X')
 Y = TypeVar('Y')
 
 import datacontrolreach.interval as itvl
+Interval = itvl.Interval
 
 ndarray = Union[jnp.ndarray, itvl.Interval]  # pylint:disable=invalid-name
 pi = jnp.pi
@@ -273,3 +274,7 @@ def amax(x: ndarray) -> ndarray:
 def argmin(x: ndarray) -> ndarray:
   """Returns the indexes of maximum along a given axis."""
   return _which_np(x).argmin(x)
+
+def interval(lb: ndarray, ub:Optional[ndarray] = None):
+  """Returns an interval representation of the array"""
+  return itvl.interval(lb, ub)

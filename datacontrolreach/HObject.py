@@ -1,63 +1,64 @@
- # has to go in this order because of circular dependencies....
-import copy
-import datacontrolreach.jumpy as jp
-from datacontrolreach import interval
-from datacontrolreach.interval import Interval
-from datacontrolreach.LipschitzApproximator import LipschitzApproximator, add_data, approximate
 import jax
 import jax.numpy as jnp
-import random
-from functools import partial
-from typing import NamedTuple
+
+import datacontrolreach.jumpy as jp
+from datacontrolreach.jumpy import Interval
+
+from datacontrolreach.LipschitzApproximator import LipschitzApproximator
+from datacontrolreach.LipschitzApproximator import add_data
+from datacontrolreach.LipschitzApproximator import init_LipschitzApproximator
+
+from jax.experimental.host_callback import id_print
 
 
-class HObject(NamedTuple):
-    shape_x:tuple
-    shape_u:tuple
-    known_functions:tuple
-    unknown_approximations:tuple
-    H:callable
-    contractions:tuple
+def init_HObject(H_fun=lambda x,u,unk:x , params_unknown=[], contractions=[]):
+    """ Create a set of LipschitzApproximator corresponding to the unknown terms
+        in the dynamics as well as a set of utilities function to append data to
+        obtain the differential inclusion and to improve the approximation quality
 
-def init_HObject(shape_x, shape_u, known_functions, unknown_approximations, H, contractions):
-    assert len(contractions) == len(unknown_approximations), 'There must be 1 contraction per unknown approximation. Got {} unknown contractions and {} approximations'.format(len(unknown_approximations), len(contractions))
-    return HObject(shape_x, shape_u, tuple(known_functions), tuple(unknown_approximations), H, tuple(contractions))
+    Args:
+        H_fun (TYPE, optional): Side information-based estimator of the vetcor field
+        params_unknown (list, optional): Parameters to construct the LipschitzApproximator
+        contractions (list, optional): A set of contractor functions to update the approximation
 
-# this functions needs to be overwritten by the end user. It needs to return an X dot from X and U by using the known functions
-# and unknown approximations
-def get_x_dot(hobject:HObject, x, u):
-    assert x.shape == hobject.shape_x
-    assert u.shape == hobject.shape_u
-    return hobject.H(x,u, hobject.known_functions, hobject.unknown_approximations)
+    Returns:
+        TYPE: approx_params : List[LipschitzApproximator], get_x_dot, contract
+    """
+    # Some check
+    assert len(params_unknown) == len(contractions),\
+        'Params and contractions lists should match. Got {} and {}'.format(len(params_unknown),len(contractions))
 
+    # Construct the LipschitzApproximator
+    approx_params = [init_LipschitzApproximator(**_params) for _params in params_unknown]
 
-def contract(hobject:HObject, x, u, x_dot):
-    new_approximations = []
-    for index in range(len(hobject.contractions)):
-        contracted_value = hobject.contractions[index](x,u,x_dot, hobject.known_functions, hobject.unknown_approximations)
-        new_approximations.append(add_data(hobject.unknown_approximations[index], x, contracted_value))
-    return HObject(         hobject.shape_x, hobject.shape_u,
-                            hobject.known_functions,
-                            tuple(new_approximations),
-                            hobject.H,
-                            hobject.contractions
-                            )
+    # Define the function to obtain xdot
+    get_xdot = lambda params, x, u : H_fun(x, u, params)
+
+    # Define a function to update the Lipschitz approximators
+    def contract(params, x, u, xdot):
+        return [ add_data(_param, x, _contract(x, u, xdot, params)) \
+                    for (_param, _contract) in zip(params, contractions)]
+
+    return approx_params, get_xdot, contract
 
 
+def inverse_contraction_B(A: jp.ndarray, B_approx: jp.Interval, C: jp.ndarray):
+    """Assume we have A = B @ C where we want to estimate a tighter value on B given
+        some initial overapproximation B_approx, and the values of A and C.
 
+    Args:
+        A (jp.ndarray): A vector or an Interval vector
+        B_approx (jp.Interval): An interval Matrix, value to contract
+        C (jp.ndarray): A vector or an Interval vector
 
-
-
-# # Assume we have A = B * C
-# # We are trying to calculate A * C^-1 = B, which is a contraction for B
-# # Normal pseudo-inverse operation is not sufficient. The current estimate of B allows us to be more precise
-# # than a pseudo-inverse.
-# # Given values for A, C and an estimate for B, we can contract the approximation for B
-# A clean scan -> No need to count the index or access by index (that's the whole point of scan)
-def inverse_contraction_B(A, B_approx:Interval, C):
+    Returns:
+        TYPE: Description
+    """
     assert A.ndim == 1, 'A must be a vector, IE of size (N,). Got {}'.format(A.ndim)
     assert B_approx.ndim == 2, 'B must be a Matrix, IE of size (N,M). Got {}'.format(B_approx.ndim)
     assert C.ndim == 1, 'C must be a vector, IE of size (M,). Got {}'.format(C.ndim)
+    assert B_approx.shape[1] == C.shape[0], \
+        "B_approx @ C must be doable, got B={} and C={}".format(B_approx.shape, C.shape)
 
     def row_wise(x):
         a, bapprx = x
@@ -66,44 +67,67 @@ def inverse_contraction_B(A, B_approx:Interval, C):
     ys = jax.vmap(row_wise)((A, B_approx))
     return ys
 
-# Assume we have A = B * C
-# We are trying to calculate B^-1 * A = C, which is a contraction for C
-# Normal pseudo-inverse operation is not sufficient. The current estimate of C allows us to be more precise
-# than a pseudo-inverse.
-# Given values for A, B and an estimate for C, we can contract the approximation for C
-def inverse_contraction_C(A, B, C_approx:Interval):
+
+def inverse_contraction_C(A: jp.ndarray, B: jp.ndarray, C_approx: jp.Interval):
+    """Assume we have A = B @ C where we want to estimate a tighter value on C given
+        some initial overapproximation C_approx, and the values of A and B.
+
+    Args:
+        A (jp.ndarray): A vector or an Interval vector
+        B (jp.ndarray): A matrix or an interval Matrix
+        C_approx (jp.Interval): A vector of Interval values
+
+    Returns:
+        TYPE: Contracted values of C
+    """
     assert A.ndim == 1, 'A must be a vector, IE of size (N,). Got {}'.format(A.ndim)
     assert B.ndim == 2, 'B must be a Matrix, IE of size (N,M). Got {}'.format(B.ndim)
     assert C_approx.ndim == 1, 'C must be a vector, IE of size (M,). Got {}'.format(C_approx.ndim)
-    assert C_approx.shape[0] == B.shape[1], "C_approx size must be the same as the second dimension of B, got {} and {} respectively".format(C_approx.shape[0], B.shape[1])
+    assert C_approx.shape[0] == B.shape[1], \
+        "B @ C_approx must be doable, got B={} and C={}".format(C_approx.shape, B.shape)
+
     def row_wise(carry, x):
         a, b = x
         y = contract_row_wise(a, C_approx, b)
         new_carry = carry & y
-        return new_carry, y
+        return new_carry, None
     carry, _ = jax.lax.scan(row_wise, C_approx, (A, B))
     return carry
 
 
-# this function is designed to find contractions for a single row of either B or C
-# A (scalar) = Sum(B(vector) * C(vector))
-# Since B and C are both vectors, which one we contract only changes the order. This allows us to solve either B or C
-# simply swap the order of the arguments
-# Returns a contracted vector of intervals
-def contract_row_wise(dot_product, vector1: Interval, vector2):
-    assert vector1.ndim == 1, 'vector1 must be a vector, IE of size (M,). Got {}'.format(vector1.ndim)
-    assert vector2.ndim == 1, 'vector2 must be a vector, IE of size (M,). Got {}'.format(vector2.ndim)
-    assert vector1.size == vector2.size, 'vector1 and vector2 must have the same size. Got {} and {} respectively'.format(vector1.size, vector2.size)
-    return hc4revise_lin_eq(dot_product, vector2, vector1)
+
+def contract_row_wise(a: jp.ndarray, x: jp.Interval, b: jp.ndarray):
+    """This function is designed to find contractions for a single row
+        of the type a = x @ b, where x is a vector of unknown variables with
+        known initial over-approximation. a is a scalar or interval scalar
+
+    Args:
+        a (jp.ndarray): a scalar/interval scalar quantity
+        x (jp.Interval): An Interval vector quantity
+        b (jp.ndarray): a vector/ Interval vector quantity
+
+    Returns:
+        TYPE: Contracted value of x
+    """
+    assert a.ndim == 0, 'a should be a 0D-array. Got {} instead.'.format(a.shape)
+    assert x.shape == b.shape, \
+        'x and b must have the same size. Got {} and {} respectively'.format(x.size, b.size)
+    return hc4revise_lin_eq(a, b, x)
 
 
 
-def hc4revise_lin_eq(rhs : jp.ndarray, coeffs : jp.ndarray, unk : Interval):
-    """ Apply HC4Revise for the constraint coeffs @ vars = rhs and return the contracted vars
-        This function assumes that coeffs are not zeros
-        :param rhs          : The right hand side of the hc4revise
-        :param coeffs       : The coefficient of the constraints
-        :param vars         : Initial overapproximation of the range of the variables in the constraints
+def hc4revise_lin_eq(rhs : jp.ndarray, coeffs : jp.ndarray, unk : jp.Interval):
+    """Apply HC4Revise for the constraint coeffs @ unk = rhs and return the contracted vars
+    This function assumes that coeffs are not zeros
+
+    Args:
+        rhs (jp.ndarray): The right hand side of the hc4revise
+        coeffs (jp.ndarray): The coefficient of the constraints
+        unk (jp.Interval): Initial overapproximation of the range of the
+                        variables in the constraints
+
+    Returns:
+        TYPE: Contracted version of unk
     """
     # Save temporary higher order sums
     _S = unk * coeffs
@@ -124,8 +148,5 @@ def hc4revise_lin_eq(rhs : jp.ndarray, coeffs : jp.ndarray, unk : Interval):
         carry = (carry - (Cunk * _c)) & _csum
         return carry, Cunk
 
-
     _, cunk = jax.lax.scan(op, Csum, (unk, coeffs, jp.concatenate((_S[::-1], Interval(0.)))[1:]) )
     return cunk
-
-
