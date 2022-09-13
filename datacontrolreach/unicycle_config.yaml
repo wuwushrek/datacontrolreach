@@ -14,7 +14,7 @@ render: True
 graph: False
 
 # Control horizon
-look_ahead_steps: 1
+look_ahead_steps: 3
 
 
 # Number of explorations step at the beginning of the episode
@@ -35,7 +35,7 @@ LipApprox:
   - lipschitzConstants: [0.0, 0.0, 0.0, 1.1, 0.0, 1.1, 0.0, 0.0, 0.0]
     boundsOnFunctionValues: [[-10.,10], [-10.,10], [-10.,10], [-10.,10], [-10.,10], [-10.,10],[-10.,10], [-10.,10], [-10.,10]]
     importanceWeights: [[0.,0.,1.], [0.,0.,1.],[0.,0.,1.], [0.,0.,1.],[0.,0.,1.], [0.,0.,1.],[0.,0.,1.], [0.,0.,1.],[0.,0.,1.]] # null # mean None
-    maxDataSize: 50 # The maximum amount of data to stor for this approximator
+    maxDataSize: 1000 # The maximum amount of data to stor for this approximator
     numStates: 3 # The number of imput states for this approximator
   # # If a second LipschitzApproximator is needed, it should be added too
   # - lipschitzConstants: list

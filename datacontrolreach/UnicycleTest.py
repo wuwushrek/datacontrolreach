@@ -129,7 +129,7 @@ H_known = lambda x, u, unknown: transition(x, u)
 def cost_function (x, u, x_future):
     # x^2 + y^2, minimal = go to 0,0
     cost =  x_future[0] ** 2 + x_future[1] ** 2
-    return cost.ub # + 0.1 * u[1]**2  # cost.ub
+    return cost.lb # + 0.1 * u[1]**2  # cost.ub
 #################################################
 
 

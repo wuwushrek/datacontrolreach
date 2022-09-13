@@ -182,9 +182,93 @@ def jvp_approximate(primal, tangents):
     # Approximate the unknown functions at xToPredict
     value = approximate(la, xToPredict)
     # Now the jvp is simply defined as described in the function definition
-    derivative = jp.matmul(la.importanceWeights, xToPredictDot) \
-                    * la.lipschitzConstants * Interval(-1.0, 1.0)
+    # derivative = jp.matmul(la.importanceWeights, xToPredictDot) * la.lipschitzConstants * Interval(-1.0, 1.0)
+
+    # custom derivative. Use the average derivative based on values around
+                # mxn                                  *   nx1      = mx1
+    derivative = jp.matmul(find_average_gradient(la, xToPredict), xToPredictDot)
+
     return value, derivative
+
+
+def find_average_gradient(la, xToPredict):
+    nearest_smaller_point_index_g = jp.zeros((len(xToPredict), )) - 1
+    nearest_larger_point_index_g = jp.zeros((len(xToPredict),)) - 1
+    smallest_difference_left_g = jp.ones((len(xToPredict),)) * -1000000 # todo make infinity
+    smallest_difference_right_g = jp.ones((len(xToPredict),)) * 1000000 # todo make infinity
+
+    # find nearest points
+    def check_nearest_point(carry, x):
+        index = x
+        xToPredict_l, xData, nearest_smaller_point_index, nearest_larger_point_index, smallest_difference_left, smallest_difference_right = carry
+        point = xData[index]
+        difference = point - xToPredict_l
+        difference =  difference.mid #  if hasattr(difference, 'ub') else difference
+        for dimension in range(len(difference)): # this loop can be unrolled, length is constant and small
+            # if to the left but a smaller differnece then previously, its new closest left point
+            cond_val = jnp.logical_and(difference[dimension] < 0, difference[dimension] > smallest_difference_left[dimension])
+            closest = jnp.where(cond_val, difference[dimension], smallest_difference_left[dimension])
+            smallest_difference_left = smallest_difference_left.at[dimension].set(closest)
+            nearest_smaller_point_index = nearest_smaller_point_index.at[dimension].set(jnp.where(cond_val, index, nearest_smaller_point_index[dimension]))
+
+
+            # if to the right, but smaller difference than previous, its new cloest left point
+            cond_val = jnp.logical_and(difference[dimension] > 0, difference[dimension] < smallest_difference_right[dimension])
+            closest = jnp.where(cond_val, difference[dimension], smallest_difference_right[dimension])
+            smallest_difference_right = smallest_difference_right.at[dimension].set(closest)
+            nearest_larger_point_index = nearest_larger_point_index.at[dimension].set(jnp.where(cond_val, index, nearest_larger_point_index[dimension]))
+        y = 0
+        return (xToPredict_l, xData, nearest_smaller_point_index, nearest_larger_point_index, smallest_difference_left, smallest_difference_right), y
+
+    carry, ys = jax.lax.scan(check_nearest_point,
+                             (xToPredict, la.xData, nearest_smaller_point_index_g, nearest_larger_point_index_g, smallest_difference_left_g, smallest_difference_right_g),
+                             jp.array(range(len(la.xData))))
+    _, _2, nearest_smaller_point_index_g, nearest_larger_point_index_g, smallest_difference_left_g,smallest_difference_right_g = carry
+
+    # for index in range(len(la.xData)):
+    #     point = la.xData[index]
+    #     difference = point - xToPredict
+    #     difference =  difference.mid #  if hasattr(difference, 'ub') else difference
+    #     for dimension in range(len(difference)): # this loop can be unrolled, length is constant and small
+    #         # if to the left but a smaller differnece then previously, its new closest left point
+    #         cond_val = jnp.logical_and(difference[dimension] < 0, difference[dimension] > smallest_difference_left[dimension])
+    #         closest = jnp.where(cond_val, difference[dimension], smallest_difference_left[dimension])
+    #         smallest_difference_left = smallest_difference_left.at[dimension].set(closest)
+    #         nearest_smaller_point_index = nearest_smaller_point_index.at[dimension].set(jnp.where(cond_val, index, nearest_smaller_point_index[dimension]))
+    #
+    #
+    #         # if to the right, but smaller difference than previous, its new cloest left point
+    #         cond_val = jnp.logical_and(difference[dimension] > 0, difference[dimension] < smallest_difference_right[dimension])
+    #         closest = jnp.where(cond_val, difference[dimension], smallest_difference_right[dimension])
+    #         smallest_difference_right = smallest_difference_right.at[dimension].set(closest)
+    #         nearest_larger_point_index = nearest_larger_point_index.at[dimension].set(jnp.where(cond_val, index, nearest_larger_point_index[dimension]))
+
+
+    # find gradient of the outputs with respect to each input dimension by taking f(a) - f(b) / a-b, where a-b is only the input dimension in question.
+    derivatives_lb = jp.zeros((len(la.lipschitzConstants), len(xToPredict)))
+    derivatives_ub = jp.zeros((len(la.lipschitzConstants), len(xToPredict)))
+
+    # let it unroll, length is constant and small
+    for input_dim in range(len(xToPredict)):
+        cond_val = jnp.logical_and(nearest_smaller_point_index_g[input_dim] != -1, nearest_larger_point_index_g[input_dim] != -1)
+        left_point = la.fxData[nearest_smaller_point_index_g[input_dim].astype(int)]
+        right_point = la.fxData[nearest_larger_point_index_g[input_dim].astype(int)]
+        deriv_estimate = (right_point - left_point) / (smallest_difference_right_g[input_dim] - smallest_difference_left_g[input_dim]) # float array
+        val_ub = jnp.where(cond_val, deriv_estimate.ub, jp.zeros_like(la.lipschitzConstants))
+        val_lb = jnp.where(cond_val, deriv_estimate.lb, jp.zeros_like(la.lipschitzConstants))
+        bounds = jnp.where(cond_val, jp.zeros_like(la.lipschitzConstants), la.lipschitzConstants)
+        derivatives_lb = derivatives_lb.at[:, input_dim].set(val_lb - bounds)
+        derivatives_ub = derivatives_ub.at[:, input_dim].set(val_ub + bounds)
+
+
+    # produces mxn output, which is the output gradients with respect to each input dimension
+    #id_print(nearest_smaller_point_index_g)
+    #id_print(nearest_larger_point_index_g)
+    # id_print(Interval(derivatives_lb, derivatives_ub))
+    return Interval(derivatives_lb, derivatives_ub)
+
+
+
 
 # # @approximate.defjvp
 # def jvp_approximate(la: LipschitzApproximator, primal, tangents):
