@@ -182,7 +182,7 @@ def jvp_approximate(primal, tangents):
     # Approximate the unknown functions at xToPredict
     value = approximate(la, xToPredict)
     # Now the jvp is simply defined as described in the function definition
-    # derivative = jp.matmul(la.importanceWeights, xToPredictDot) * la.lipschitzConstants * Interval(-1.0, 1.0)
+    #derivative = jp.matmul(la.importanceWeights, xToPredictDot) * la.lipschitzConstants * Interval(-1.0, 1.0)
 
     # custom derivative. Use the average derivative based on values around
                 # mxn                                  *   nx1      = mx1

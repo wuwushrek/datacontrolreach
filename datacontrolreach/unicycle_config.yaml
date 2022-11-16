@@ -14,7 +14,7 @@ render: True
 graph: False
 
 # Control horizon
-look_ahead_steps: 3
+look_ahead_steps: 10
 
 
 # Number of explorations step at the beginning of the episode
